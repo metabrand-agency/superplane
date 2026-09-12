@@ -138,8 +138,8 @@ function buildArrowGeometry(){
 function ensureSharedResources(){
   if(sharedArrowGeo) return; // already built
   sharedArrowGeo = buildArrowGeometry();
-  sharedBaseMat = new THREE.MeshLambertMaterial({color:COLOR_BASE, flatShading:true});
-  sharedAccentMat = new THREE.MeshLambertMaterial({color:COLOR_ACCENT, emissive:COLOR_ACCENT, emissiveIntensity:0.5, flatShading:true});
+  sharedBaseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE});
+  sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT});
   sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
   sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
 }
@@ -449,10 +449,12 @@ function mount(target, options){
   baseMesh.count = 0; accentMesh.count = 0;
   scene.add(baseMesh, accentMesh);
 
-  var ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
-  var dirLight = new THREE.DirectionalLight(0xffffff, 0.35);
-  dirLight.position.set(3, 5, 4);
-  scene.add(ambientLight, dirLight);
+  // Arrows are fully self-illuminated (MeshBasicMaterial ignores lighting entirely,
+  // so every face of the same object is one uniform flat color — no shaded faces).
+  // Depth cueing ("farther = grayer") comes from scene fog instead, which fades each
+  // fragment toward a neutral gray as it recedes from the camera — applied by distance,
+  // not by surface angle, so it never creates a shaded/lit look on the object itself.
+  scene.fog = new THREE.Fog(0x55534f, 3, 15);
 
   var poleGroup = new THREE.Group();
   scene.add(poleGroup);
