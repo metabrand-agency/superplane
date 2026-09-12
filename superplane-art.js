@@ -33,41 +33,41 @@ var MODES = {
   field: {
     label: 'FIELD PARAMS',
     params: [
-      {key:'count',     label:'PARTICLES',     min:50,  max:800, step:10,  def:300},
-      {key:'poles',     label:'POLE COUNT',    min:1,   max:4,   step:1,   def:2},
-      {key:'strength',  label:'POLE STRENGTH', min:0.2, max:3,   step:0.05,def:1},
-      {key:'speed',     label:'FLOW SPEED',    min:0.1, max:3,   step:0.05,def:1},
-      {key:'cursorPull',label:'CURSOR PULL',   min:0,   max:3,   step:0.05,def:1.2}
+      {key:'count',     label:'PARTICLES',     min:50,  max:800, step:10,  def:800},
+      {key:'poles',     label:'POLE COUNT',    min:1,   max:4,   step:1,   def:4},
+      {key:'strength',  label:'POLE STRENGTH', min:0.2, max:3,   step:0.05,def:0.7},
+      {key:'speed',     label:'FLOW SPEED',    min:0.1, max:3,   step:0.05,def:0.3},
+      {key:'cursorPull',label:'CURSOR PULL',   min:0,   max:3,   step:0.05,def:3.0}
     ]
   },
   school: {
     label: 'SCHOOL PARAMS',
     params: [
-      {key:'count',      label:'AGENTS',      min:20, max:220, step:5,   def:110},
-      {key:'cohesion',   label:'COHESION',    min:0,  max:2,   step:0.02,def:0.6},
-      {key:'separation', label:'SEPARATION',  min:0,  max:2,   step:0.02,def:0.9},
-      {key:'alignment',  label:'ALIGNMENT',   min:0,  max:2,   step:0.02,def:0.8},
-      {key:'cursorPull', label:'CURSOR PULL', min:0,  max:3,   step:0.05,def:1.0},
-      {key:'speed',      label:'SWIM SPEED',  min:0.1,max:3,   step:0.05,def:1.2}
+      {key:'count',      label:'AGENTS',      min:20, max:220, step:5,   def:220},
+      {key:'cohesion',   label:'COHESION',    min:0,  max:2,   step:0.02,def:2.0},
+      {key:'separation', label:'SEPARATION',  min:0,  max:2,   step:0.02,def:2.0},
+      {key:'alignment',  label:'ALIGNMENT',   min:0,  max:2,   step:0.02,def:0.0},
+      {key:'cursorPull', label:'CURSOR PULL', min:0,  max:3,   step:0.05,def:3.0},
+      {key:'speed',      label:'SWIM SPEED',  min:0.1,max:3,   step:0.05,def:0.6}
     ]
   },
   growth: {
     label: 'GROWTH PARAMS',
     params: [
-      {key:'maxSegments', label:'MAX SEGMENTS', min:100,max:1200,step:20, def:500},
-      {key:'maxDepth',    label:'MAX DEPTH',    min:3,  max:12,  step:1,  def:7},
-      {key:'branchAngle', label:'BRANCH ANGLE', min:5,  max:60,  step:1,  def:28},
-      {key:'variance',    label:'VARIANCE',     min:0,  max:1,   step:0.02,def:0.4},
-      {key:'spawnChance', label:'SPAWN CHANCE', min:0,  max:1,   step:0.02,def:0.65},
-      {key:'growSpeed',   label:'GROW SPEED',   min:0.2,max:4,   step:0.05,def:1.4},
-      {key:'cursorPull',  label:'CURSOR BIAS',  min:0,  max:2,   step:0.05,def:0.8}
+      {key:'maxSegments', label:'MAX SEGMENTS', min:100,max:1200,step:20, def:1200},
+      {key:'maxDepth',    label:'MAX DEPTH',    min:3,  max:12,  step:1,  def:12},
+      {key:'branchAngle', label:'BRANCH ANGLE', min:5,  max:60,  step:1,  def:60},
+      {key:'variance',    label:'VARIANCE',     min:0,  max:1,   step:0.02,def:1.0},
+      {key:'spawnChance', label:'SPAWN CHANCE', min:0,  max:1,   step:0.02,def:0.44},
+      {key:'growSpeed',   label:'GROW SPEED',   min:0.2,max:4,   step:0.05,def:0.5},
+      {key:'cursorPull',  label:'CURSOR BIAS',  min:0,  max:2,   step:0.05,def:0.25}
     ]
   }
 };
 var GLOBAL_PARAMS = [
-  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:1.0},
-  {key:'lineThickness',  label:'LINE THICKNESS', min:0.2,max:3.0,step:0.05,def:1.0},
-  {key:'accentRadius',   label:'ACCENT RADIUS',  min:0,  max:8,  step:0.1, def:3.0}
+  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:1.45},
+  {key:'lineThickness',  label:'LINE THICKNESS', min:0.2,max:3.0,step:0.05,def:0.20},
+  {key:'accentRadius',   label:'ACCENT RADIUS',  min:0,  max:8,  step:0.1, def:0.0}
 ];
 
 /* ---------------- shared arrow geometry (safe to reuse across instances) ----------------
@@ -138,8 +138,8 @@ function buildArrowGeometry(){
 function ensureSharedResources(){
   if(sharedArrowGeo) return; // already built
   sharedArrowGeo = buildArrowGeometry();
-  sharedBaseMat = new THREE.MeshLambertMaterial({color:COLOR_BASE});
-  sharedAccentMat = new THREE.MeshLambertMaterial({color:COLOR_ACCENT, emissive:COLOR_ACCENT, emissiveIntensity:0.5});
+  sharedBaseMat = new THREE.MeshLambertMaterial({color:COLOR_BASE, flatShading:true});
+  sharedAccentMat = new THREE.MeshLambertMaterial({color:COLOR_ACCENT, emissive:COLOR_ACCENT, emissiveIntensity:0.5, flatShading:true});
   sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
   sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
 }
@@ -449,8 +449,8 @@ function mount(target, options){
   baseMesh.count = 0; accentMesh.count = 0;
   scene.add(baseMesh, accentMesh);
 
-  var ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
-  var dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+  var ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 0.35);
   dirLight.position.set(3, 5, 4);
   scene.add(ambientLight, dirLight);
 
@@ -573,13 +573,24 @@ function mount(target, options){
     for(var i=0;i<n;i++){
       agents.push({
         pos: new THREE.Vector3((Math.random()-0.5)*4,(Math.random()-0.5)*4,(Math.random()-0.5)*2),
-        vel: new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)*0.3)
+        vel: new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)*0.3),
+        // most fish swim near full speed; a minority are noticeably slower and trail the pack
+        speedFactor: Math.random() < 0.22 ? (0.35 + Math.random()*0.3) : (0.85 + Math.random()*0.15)
       });
     }
   }
   var NEIGHBOR_R=1.6, SEP_R=0.55;
+  var schoolAvgVel = new THREE.Vector3(), schoolTravelAxis = new THREE.Vector3(1,0,0);
   function updateSchool(dt){
     var n = agents.length, c = cfg.school;
+
+    // average heading of the whole school — used to stretch the containment shape
+    // long along the direction of travel instead of pulling everyone into a sphere.
+    schoolAvgVel.set(0,0,0);
+    for(var k=0;k<n;k++) schoolAvgVel.add(agents[k].vel);
+    if(n>0) schoolAvgVel.divideScalar(n);
+    if(schoolAvgVel.lengthSq()>1e-6) schoolTravelAxis.copy(schoolAvgVel).normalize();
+
     for(var i=0;i<n;i++){
       var a = agents[i];
       var coh=new THREE.Vector3(), ali=new THREE.Vector3(), sep=new THREE.Vector3();
@@ -603,13 +614,22 @@ function mount(target, options){
         force.add(coh).add(ali);
       }
       force.add(sep.multiplyScalar(c.separation));
-      force.addScaledVector(a.pos, -0.02);
+
+      // elongated (oval) containment: weak pull along the travel axis (lets the
+      // school stretch out lengthwise), stronger pull perpendicular to it (keeps
+      // it narrow) — instead of a uniform pull that keeps the shape round.
+      var alongAmt = a.pos.dot(schoolTravelAxis);
+      var alongVec = schoolTravelAxis.clone().multiplyScalar(alongAmt);
+      var perpVec = a.pos.clone().sub(alongVec);
+      force.addScaledVector(alongVec, -0.007);
+      force.addScaledVector(perpVec, -0.05);
+
       if(interactionActive && c.cursorPull>0){
         var toC = new THREE.Vector3().subVectors(interactionPoint, a.pos).multiplyScalar(c.cursorPull*0.4);
         force.add(toC);
       }
       a.vel.addScaledVector(force, dt);
-      var maxSpeed = 2.2;
+      var maxSpeed = 2.2 * a.speedFactor;
       if(a.vel.length()>maxSpeed) a.vel.setLength(maxSpeed);
       a.pos.addScaledVector(a.vel, dt*c.speed);
     }
@@ -627,7 +647,7 @@ function mount(target, options){
     activeTwigs = [{pos:lastSeed.clone(), dir:new THREE.Vector3(0,1,0), len:0.9, depth:0}];
     resetPending=false; resetTimer=0; growthAccum=0;
   }
-  function growthStep(){
+  function growthStep(time, interval){
     var c = cfg.growth;
     var newTwigs = [];
     for(var t=0;t<activeTwigs.length;t++){
@@ -645,7 +665,7 @@ function mount(target, options){
       dir.normalize();
       var len = twig.len;
       var newPos = twig.pos.clone().addScaledVector(dir, len);
-      segments.push({pos:twig.pos.clone(), dir:dir.clone(), len:len});
+      segments.push({pos:twig.pos.clone(), dir:dir.clone(), len:len, birth:time, growDur:interval});
       var nd = twig.depth+1;
       if(nd < c.maxDepth && segments.length < c.maxSegments){
         if(Math.random() < c.spawnChance){
@@ -663,10 +683,10 @@ function mount(target, options){
     }
     activeTwigs = newTwigs;
     if(activeTwigs.length===0 || segments.length>=c.maxSegments){
-      resetPending=true; resetTimer=1.0;
+      resetPending=true; resetTimer=10.0; // pause once fully grown, before regrowing
     }
   }
-  function updateGrowth(dt){
+  function updateGrowth(dt, time){
     if(resetPending){
       resetTimer -= dt;
       if(resetTimer<=0) resetGrowth();
@@ -677,7 +697,7 @@ function mount(target, options){
     var guard=0;
     while(growthAccum > interval && guard < 20){
       growthAccum -= interval;
-      growthStep();
+      growthStep(time, interval);
       guard++;
       if(resetPending) break;
     }
@@ -709,7 +729,7 @@ function mount(target, options){
     accentMesh.instanceMatrix.needsUpdate = true;
   }
   var FIELD_LEN=0.4, SCHOOL_LEN=0.34;
-  function composeForMode(){
+  function composeForMode(time){
     if(state.mode==='field'){
       poleGroup.visible = true;
       assignInstances(fieldParticles, function(p){
@@ -725,8 +745,14 @@ function mount(target, options){
     } else if(state.mode==='growth'){
       poleGroup.visible = false;
       assignInstances(segments, function(s){
-        var center = s.pos.clone().addScaledVector(s.dir, s.len*0.5);
-        return {pos:center, dir:s.dir, len:s.len};
+        // animate each segment growing outward from its own base point (like an
+        // extending stick) instead of popping in at full length instantly.
+        var age = Math.max(0, time - s.birth);
+        var t = s.growDur>0 ? Math.min(1, age/s.growDur) : 1;
+        var curLen = s.len * t;
+        if(curLen <= 0.001) return null;
+        var center = s.pos.clone().addScaledVector(s.dir, curLen*0.5);
+        return {pos:center, dir:s.dir, len:curLen};
       });
     }
   }
@@ -832,9 +858,9 @@ function mount(target, options){
 
     if(state.mode==='field') updateField(dt, elapsed);
     else if(state.mode==='school') updateSchool(dt);
-    else if(state.mode==='growth') updateGrowth(dt);
+    else if(state.mode==='growth') updateGrowth(dt, elapsed);
 
-    composeForMode();
+    composeForMode(elapsed);
 
     if(state.autoRotate) orbit.theta += dt*0.15;
     applyOrbit();
