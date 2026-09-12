@@ -65,49 +65,104 @@ var MODES = {
   }
 };
 var GLOBAL_PARAMS = [
-  {key:'arrowScale',   label:'ARROW SCALE',   min:0.3,max:2.5,step:0.05,def:1.0},
-  {key:'accentRadius', label:'ACCENT RADIUS', min:0,  max:8,  step:0.1, def:3.0}
+  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:1.0},
+  {key:'lineThickness',  label:'LINE THICKNESS', min:0.2,max:3.0,step:0.05,def:1.0},
+  {key:'accentRadius',   label:'ACCENT RADIUS',  min:0,  max:8,  step:0.1, def:3.0}
 ];
 
 /* ---------------- shared arrow geometry (safe to reuse across instances) ----------------
    Built lazily by ensureSharedResources() the first time mount() actually runs, so this
    file never throws or no-ops just because three.js has not executed yet at parse time
-   (script load order can vary by host page). */
-var SW = 0.09, HW = 0.22;
-var OUTLINE = null;
+   (script load order can vary by host page).
+
+   The arrow is a real 3D solid (cylinder shaft + cone head, merged into one non-indexed
+   BufferGeometry), not a flat 2D silhouette — so it still reads as an arrow from any
+   camera angle, including end-on. Proportions are based on the arrow2.svg reference
+   (head occupies roughly the last ~28% of total length; head radius roughly ~2x shaft
+   radius). Local space: length runs along local +X from -0.5 (tail) to +0.5 (tip). */
+var HEAD_LEN = 0.30;      // fraction of total length occupied by the cone head
+var HEAD_RADIUS = 0.16;   // local head base radius
+var SHAFT_RADIUS = 0.055; // local shaft radius (this is what LINE THICKNESS scales)
+var RADIAL_SEGMENTS = 7;  // low-poly, keeps triangle count small across many instances
+
+var ARROW_LOCAL_POINTS = null; // deduplicated local vertices, used for SVG silhouette export
 var sharedArrowGeo = null, sharedBaseMat = null, sharedAccentMat = null, sharedPoleGeo = null, sharedPoleMat = null;
 
-function buildArrowGeometry(){
-  var tris = [[0,1,2],[0,2,3],[0,3,4],[0,4,5],[0,5,6]];
-  var positions = [];
-  tris.forEach(function(t){
-    t.forEach(function(i){
-      var p = OUTLINE[i];
-      positions.push(p.x, p.y, p.z);
-    });
+function mergeGeometries(geoList){
+  var totalVerts = 0;
+  var nonIndexed = geoList.map(function(g){ return g.index ? g.toNonIndexed() : g; });
+  nonIndexed.forEach(function(g){ totalVerts += g.attributes.position.count; });
+  var positions = new Float32Array(totalVerts*3);
+  var normals = new Float32Array(totalVerts*3);
+  var offset = 0;
+  nonIndexed.forEach(function(g){
+    var p = g.attributes.position.array;
+    positions.set(p, offset*3);
+    if(g.attributes.normal){ normals.set(g.attributes.normal.array, offset*3); }
+    offset += g.attributes.position.count;
   });
-  var geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.computeVertexNormals();
-  return geo;
+  var merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  return merged;
+}
+
+function dedupPoints(float32arr){
+  var seen = {}, out = [];
+  for(var i=0;i<float32arr.length;i+=3){
+    var x=float32arr[i], y=float32arr[i+1], z=float32arr[i+2];
+    var key = x.toFixed(4)+','+y.toFixed(4)+','+z.toFixed(4);
+    if(!seen[key]){ seen[key]=true; out.push(new THREE.Vector3(x,y,z)); }
+  }
+  return out;
+}
+
+function buildArrowGeometry(){
+  var shaftLen = 1 - HEAD_LEN;
+  var shaftCenterX = -HEAD_LEN/2;
+  var headCenterX = 0.5 - HEAD_LEN/2;
+
+  var shaftGeo = new THREE.CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, shaftLen, RADIAL_SEGMENTS);
+  shaftGeo.rotateZ(-Math.PI/2); // align cylinder's height axis (Y) to local +X
+  shaftGeo.translate(shaftCenterX, 0, 0);
+
+  var headGeo = new THREE.ConeGeometry(HEAD_RADIUS, HEAD_LEN, RADIAL_SEGMENTS);
+  headGeo.rotateZ(-Math.PI/2); // cone apex (was +Y) now points toward +X (the tip)
+  headGeo.translate(headCenterX, 0, 0);
+
+  var merged = mergeGeometries([shaftGeo, headGeo]);
+  ARROW_LOCAL_POINTS = dedupPoints(merged.attributes.position.array);
+  return merged;
 }
 
 function ensureSharedResources(){
   if(sharedArrowGeo) return; // already built
-  OUTLINE = [
-    new THREE.Vector3(-0.5,  SW, 0),
-    new THREE.Vector3( 0.05, SW, 0),
-    new THREE.Vector3( 0.05, HW, 0),
-    new THREE.Vector3( 0.5,  0,  0),
-    new THREE.Vector3( 0.05,-HW, 0),
-    new THREE.Vector3( 0.05,-SW, 0),
-    new THREE.Vector3(-0.5, -SW, 0)
-  ];
   sharedArrowGeo = buildArrowGeometry();
-  sharedBaseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE, side:THREE.DoubleSide});
-  sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT, side:THREE.DoubleSide});
+  sharedBaseMat = new THREE.MeshLambertMaterial({color:COLOR_BASE});
+  sharedAccentMat = new THREE.MeshLambertMaterial({color:COLOR_ACCENT, emissive:COLOR_ACCENT, emissiveIntensity:0.5});
   sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
   sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
+}
+
+/* ---------------- 2D convex hull (Andrew's monotone chain) — used to silhouette the
+   3D arrow solid into a flat SVG polygon on export ---------------- */
+function convexHull2D(pts){
+  pts = pts.slice().sort(function(a,b){ return a[0]-b[0] || a[1]-b[1]; });
+  var n = pts.length;
+  if(n < 3) return pts;
+  function cross(o,a,b){ return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]); }
+  var lower = [];
+  for(var i=0;i<n;i++){
+    while(lower.length>=2 && cross(lower[lower.length-2], lower[lower.length-1], pts[i])<=0) lower.pop();
+    lower.push(pts[i]);
+  }
+  var upper = [];
+  for(var i=n-1;i>=0;i--){
+    while(upper.length>=2 && cross(upper[upper.length-2], upper[upper.length-1], pts[i])<=0) upper.pop();
+    upper.push(pts[i]);
+  }
+  upper.pop(); lower.pop();
+  return lower.concat(upper);
 }
 
 /* ---------------- shared slider row builder ---------------- */
@@ -394,6 +449,11 @@ function mount(target, options){
   baseMesh.count = 0; accentMesh.count = 0;
   scene.add(baseMesh, accentMesh);
 
+  var ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+  dirLight.position.set(3, 5, 4);
+  scene.add(ambientLight, dirLight);
+
   var poleGroup = new THREE.Group();
   scene.add(poleGroup);
 
@@ -638,7 +698,7 @@ function mount(target, options){
       if(dir.lengthSq()<1e-8) dir = X_AXIS;
       var isAccent = interactionActive && pos.distanceToSquared(interactionPoint) < accentR2;
       tmpQuat.setFromUnitVectors(X_AXIS, dir);
-      tmpScale.set(len, cfg.global.arrowScale, cfg.global.arrowScale);
+      tmpScale.set(len, cfg.global.arrowScale*cfg.global.lineThickness, cfg.global.arrowScale*cfg.global.lineThickness);
       tmpMat.compose(pos, tmpQuat, tmpScale);
       if(isAccent){ if(ai<MAX_INSTANCES){ accentMesh.setMatrixAt(ai++, tmpMat); } }
       else { if(bi<MAX_INSTANCES){ baseMesh.setMatrixAt(bi++, tmpMat); } }
@@ -716,15 +776,17 @@ function mount(target, options){
       for(var i=0;i<frameArrows.length;i++){
         var a = frameArrows[i];
         tmpQuat.setFromUnitVectors(X_AXIS, a.dir);
-        tmpScale.set(a.len, cfg.global.arrowScale, cfg.global.arrowScale);
+        tmpScale.set(a.len, cfg.global.arrowScale*cfg.global.lineThickness, cfg.global.arrowScale*cfg.global.lineThickness);
         tmpMat.compose(a.pos, tmpQuat, tmpScale);
-        var pts=[];
-        for(var k=0;k<OUTLINE.length;k++){
-          var wp = OUTLINE[k].clone().applyMatrix4(tmpMat);
+        var pts2d=[];
+        for(var k=0;k<ARROW_LOCAL_POINTS.length;k++){
+          var wp = ARROW_LOCAL_POINTS[k].clone().applyMatrix4(tmpMat);
           var proj = wp.clone().project(camera);
           var x=(proj.x*0.5+0.5)*w, y=(1-(proj.y*0.5+0.5))*h;
-          pts.push(x.toFixed(1)+','+y.toFixed(1));
+          pts2d.push([x,y]);
         }
+        var hull = convexHull2D(pts2d);
+        var pts = hull.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); });
         var poly = '<polygon points="'+pts.join(' ')+'"/>';
         if(a.accent) accentParts.push(poly); else baseParts.push(poly);
       }
