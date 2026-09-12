@@ -20,11 +20,6 @@
 (function(global){
 "use strict";
 
-if(typeof THREE === 'undefined'){
-  console.error('SuperplaneArt: three.js must be loaded before this script.');
-  return;
-}
-
 /* ======================================================================
    SHARED CONSTANTS
 ====================================================================== */
@@ -74,17 +69,14 @@ var GLOBAL_PARAMS = [
   {key:'accentRadius', label:'ACCENT RADIUS', min:0,  max:8,  step:0.1, def:3.0}
 ];
 
-/* ---------------- shared arrow geometry (safe to reuse across instances) ---------------- */
+/* ---------------- shared arrow geometry (safe to reuse across instances) ----------------
+   Built lazily by ensureSharedResources() the first time mount() actually runs, so this
+   file never throws or no-ops just because three.js has not executed yet at parse time
+   (script load order can vary by host page). */
 var SW = 0.09, HW = 0.22;
-var OUTLINE = [
-  new THREE.Vector3(-0.5,  SW, 0),
-  new THREE.Vector3( 0.05, SW, 0),
-  new THREE.Vector3( 0.05, HW, 0),
-  new THREE.Vector3( 0.5,  0,  0),
-  new THREE.Vector3( 0.05,-HW, 0),
-  new THREE.Vector3( 0.05,-SW, 0),
-  new THREE.Vector3(-0.5, -SW, 0)
-];
+var OUTLINE = null;
+var sharedArrowGeo = null, sharedBaseMat = null, sharedAccentMat = null, sharedPoleGeo = null, sharedPoleMat = null;
+
 function buildArrowGeometry(){
   var tris = [[0,1,2],[0,2,3],[0,3,4],[0,4,5],[0,5,6]];
   var positions = [];
@@ -99,11 +91,24 @@ function buildArrowGeometry(){
   geo.computeVertexNormals();
   return geo;
 }
-var sharedArrowGeo = buildArrowGeometry();
-var sharedBaseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE, side:THREE.DoubleSide});
-var sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT, side:THREE.DoubleSide});
-var sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
-var sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
+
+function ensureSharedResources(){
+  if(sharedArrowGeo) return; // already built
+  OUTLINE = [
+    new THREE.Vector3(-0.5,  SW, 0),
+    new THREE.Vector3( 0.05, SW, 0),
+    new THREE.Vector3( 0.05, HW, 0),
+    new THREE.Vector3( 0.5,  0,  0),
+    new THREE.Vector3( 0.05,-HW, 0),
+    new THREE.Vector3( 0.05,-SW, 0),
+    new THREE.Vector3(-0.5, -SW, 0)
+  ];
+  sharedArrowGeo = buildArrowGeometry();
+  sharedBaseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE, side:THREE.DoubleSide});
+  sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT, side:THREE.DoubleSide});
+  sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
+  sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
+}
 
 /* ---------------- shared slider row builder ---------------- */
 function makeRow(param, getVal, setVal, onChange){
@@ -153,6 +158,25 @@ function mount(target, options){
   options = options || {};
   var container = (typeof target === 'string') ? document.querySelector(target) : target;
   if(!container){ console.error('SuperplaneArt: target not found:', target); return null; }
+
+  if(typeof THREE === 'undefined'){
+    // three.js has not executed yet (script load order can vary by host page) — retry briefly
+    // instead of failing silently, so a temporary race never leaves a blank container.
+    var attempts = 0;
+    var waitId = setInterval(function(){
+      attempts++;
+      if(typeof THREE !== 'undefined'){
+        clearInterval(waitId);
+        mount(target, options);
+      } else if(attempts > 50){ // ~5s
+        clearInterval(waitId);
+        console.error('SuperplaneArt: three.js did not load within 5s.');
+        container.innerHTML = '<div style="padding:16px;font-family:monospace;font-size:12px;color:#a33;">SuperplaneArt: three.js failed to load.</div>';
+      }
+    }, 100);
+    return null;
+  }
+  ensureSharedResources();
 
   injectSliderThumbCSS();
   container.classList.add('sp-art-root');
