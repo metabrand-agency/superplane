@@ -151,6 +151,52 @@ function injectSliderThumbCSS(){
   document.head.appendChild(style);
 }
 
+/* ---------------- shared code-snippet modal (used by the EXPORT EMBED button) ---------------- */
+function showCodeModal(title, code){
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(11,11,12,0.6);z-index:2147483647;display:flex;align-items:center;justify-content:center;font-family:'+FONT_STACK+';';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#ececea;border:1px solid #1c1c1c;width:min(640px,92vw);max-height:82vh;display:flex;flex-direction:column;padding:16px;box-sizing:border-box;';
+  var titleEl = document.createElement('div');
+  titleEl.textContent = title;
+  titleEl.style.cssText = 'font-weight:700;letter-spacing:0.5px;margin-bottom:10px;font-size:11px;color:#141414;';
+  var ta = document.createElement('textarea');
+  ta.value = code;
+  ta.readOnly = true;
+  ta.spellcheck = false;
+  ta.style.cssText = 'flex:1;min-height:220px;width:100%;box-sizing:border-box;font-family:'+FONT_STACK+';font-size:11px;line-height:1.5;padding:10px;border:1px solid #1c1c1c;resize:vertical;background:#fff;color:#141414;';
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;margin-top:10px;';
+  var copyBtn = document.createElement('button');
+  copyBtn.textContent = 'COPY';
+  var closeBtn = document.createElement('button');
+  closeBtn.textContent = 'CLOSE';
+  [copyBtn, closeBtn].forEach(function(b){
+    b.style.cssText = 'flex:1;padding:8px 4px;border:1px solid #1c1c1c;background:#ececea;color:#141414;font-family:inherit;font-size:10px;letter-spacing:0.4px;cursor:pointer;';
+  });
+  copyBtn.addEventListener('click', function(){
+    ta.focus(); ta.select();
+    var ok = false;
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(code);
+        ok = true;
+      }
+    }catch(e){}
+    if(!ok){ try{ document.execCommand('copy'); }catch(e){} }
+    copyBtn.textContent = 'COPIED';
+    setTimeout(function(){ copyBtn.textContent = 'COPY'; }, 1500);
+  });
+  function close(){ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) close(); });
+  btnRow.appendChild(copyBtn); btnRow.appendChild(closeBtn);
+  box.appendChild(titleEl); box.appendChild(ta); box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  ta.focus(); ta.select();
+}
+
 /* ======================================================================
    MOUNT
 ====================================================================== */
@@ -296,6 +342,11 @@ function mount(target, options){
     });
     exportRow.appendChild(btnPng); exportRow.appendChild(btnSvg);
     panelEl.appendChild(exportRow);
+
+    var btnEmbed = document.createElement('button');
+    btnEmbed.textContent = 'EXPORT EMBED CODE';
+    btnEmbed.style.cssText = 'width:100%;padding:8px 4px;border:1px solid #1c1c1c;background:#ececea;color:#141414;font-family:inherit;font-size:10px;letter-spacing:0.4px;cursor:pointer;margin-bottom:14px;';
+    panelEl.appendChild(btnEmbed);
 
     readoutEl = document.createElement('div');
     readoutEl.style.cssText = 'margin-top:4px;line-height:1.6;color:#3a3a38;';
@@ -683,6 +734,25 @@ function mount(target, options){
         '<g fill="#ff5a1f">'+accentParts.join('')+'</g>'+
         '</svg>';
       downloadBlob(svg, 'image/svg+xml', 'superplane-'+state.mode+'.svg');
+    });
+    btnEmbed.addEventListener('click', function(){
+      var overridesObj = {global:{}};
+      overridesObj.global = {};
+      GLOBAL_PARAMS.forEach(function(p){ overridesObj.global[p.key] = cfg.global[p.key]; });
+      overridesObj[state.mode] = {};
+      MODES[state.mode].params.forEach(function(p){ overridesObj[state.mode][p.key] = cfg[state.mode][p.key]; });
+
+      var idSlug = 'sp-embed-' + state.mode;
+      var mountOptions = {mode: state.mode, panel: false, overrides: overridesObj};
+      var snippet =
+        '<!-- SuperPlane generative art \u2014 fills 100% of this block\'s width/height.\n' +
+        '     Set the width/height on the wrapping element on your page. -->\n' +
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>\n' +
+        '<script src="https://cdn.jsdelivr.net/gh/metabrand-agency/superplane@main/superplane-art.js"><\/script>\n' +
+        '<div id="' + idSlug + '" style="width:100%;height:100%;"></div>\n' +
+        '<script>SuperplaneArt.mount(\'#' + idSlug + '\', ' + JSON.stringify(mountOptions) + ');<\/script>';
+
+      showCodeModal('EMBED CODE \u2014 paste into any page (' + state.mode.toUpperCase() + ', current settings, no panel, fully interactive)', snippet);
     });
   }
 
