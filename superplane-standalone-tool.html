@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SUPERPLANE — GENERATIVE ARROWS</title>
+<style>
+  :root{
+    --bg-chrome:#ececea;
+    --ink:#141414;
+    --track:#cfcfcb;
+    --line:#1c1c1c;
+    --canvas-bg:#0b0b0c;
+    --accent:#ff5a1f;
+    --panel-w:300px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg-chrome);color:var(--ink);
+    font-family:'IBM Plex Mono','SFMono-Regular','Cascadia Code',Menlo,Consolas,monospace;
+    font-size:11px; -webkit-font-smoothing:none;}
+  #app{display:flex;height:100vh;width:100vw;overflow:hidden;}
+
+  /* ---------- panel ---------- */
+  #panel{width:var(--panel-w);min-width:var(--panel-w);height:100%;overflow-y:auto;
+    border-right:1px solid var(--line);padding:14px 14px 20px;}
+  #panel::-webkit-scrollbar{width:6px;}
+  #panel::-webkit-scrollbar-thumb{background:var(--ink);}
+  .title{font-weight:700;letter-spacing:0.5px;font-size:11px;margin-bottom:2px;}
+  .subtitle{color:#6b6b68;margin-bottom:14px;font-size:10px;}
+  .divider{border-top:1px solid var(--line);margin:14px 0;}
+
+  .tabs{display:flex;border:1px solid var(--line);}
+  .tab{flex:1;text-align:center;padding:7px 0;cursor:pointer;user-select:none;
+    border-right:1px solid var(--line);background:var(--bg-chrome);letter-spacing:0.5px;}
+  .tab:last-child{border-right:none;}
+  .tab.active{background:var(--ink);color:var(--bg-chrome);}
+
+  .section-label{margin:4px 0 8px;font-weight:700;letter-spacing:0.5px;}
+
+  .ctrl-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .ctrl-val{width:38px;flex:0 0 38px;text-align:left;font-variant-numeric:tabular-nums;}
+  .ctrl-label{flex:0 0 auto;white-space:nowrap;letter-spacing:0.3px;color:#3a3a38;}
+  input.ctrl-bar{-webkit-appearance:none;appearance:none;flex:1 1 auto;height:14px;
+    border:1px solid var(--line);background:var(--track);cursor:pointer;}
+  input.ctrl-bar::-webkit-slider-thumb{-webkit-appearance:none;width:2px;height:14px;
+    background:transparent;border:none;}
+  input.ctrl-bar::-moz-range-thumb{width:2px;height:14px;background:transparent;border:none;}
+  input.ctrl-bar::-moz-range-track{height:14px;background:transparent;}
+
+  .btnrow{display:flex;gap:8px;margin-bottom:8px;}
+  button.utilbtn{flex:1;padding:8px 4px;border:1px solid var(--line);background:var(--bg-chrome);
+    color:var(--ink);font-family:inherit;font-size:10px;letter-spacing:0.4px;cursor:pointer;}
+  button.utilbtn:hover{background:var(--ink);color:var(--bg-chrome);}
+  button.utilbtn.on{background:var(--accent);border-color:var(--accent);color:#141414;}
+
+  .readout{margin-top:14px;line-height:1.6;color:#3a3a38;}
+  .readout b{color:var(--ink);}
+  .hint{margin-top:16px;color:#8a8a86;line-height:1.6;}
+
+  /* ---------- canvas ---------- */
+  #canvas-wrap{flex:1;position:relative;background:var(--canvas-bg);}
+  #gl{display:block;width:100%;height:100%;}
+  #hud{position:absolute;left:14px;bottom:14px;color:#8b8b86;font-size:10px;line-height:1.7;
+    background:rgba(11,11,12,0.55);padding:8px 10px;border:1px solid #2a2a28;pointer-events:none;}
+  #hud b{color:#e7e5df;}
+  #crosshair{position:absolute;top:14px;right:14px;color:#5c5c58;font-size:10px;
+    border:1px solid #2a2a28;padding:6px 9px;background:rgba(11,11,12,0.55);}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <div class="title">SUPERPLANE — GENERATIVE ARROWS</div>
+    <div class="subtitle">SCATTERED EFFORT / GUIDED COURSE</div>
+
+    <div class="tabs" id="modeTabs">
+      <div class="tab" data-mode="field">FIELD</div>
+      <div class="tab" data-mode="school">SCHOOL</div>
+      <div class="tab" data-mode="growth">GROWTH</div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label">GLOBAL</div>
+    <div id="globalParams"></div>
+    <div class="btnrow">
+      <button class="utilbtn" id="btnRotate">AUTO ROTATE</button>
+      <button class="utilbtn" id="btnReset">RESET</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label" id="modeSectionLabel">FIELD PARAMS</div>
+    <div id="modeParams"></div>
+
+    <div class="divider"></div>
+    <div class="section-label">EXPORT</div>
+    <div class="btnrow">
+      <button class="utilbtn" id="btnPng">EXPORT PNG</button>
+      <button class="utilbtn" id="btnSvg">EXPORT SVG</button>
+    </div>
+
+    <div class="readout" id="readout"></div>
+
+    <div class="hint">
+      DRAG CANVAS TO ORBIT · SCROLL TO ZOOM<br>
+      MOVE CURSOR OVER FIELD TO STEER<br>
+      CLICK CANVAS IN GROWTH MODE TO REPLANT
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="gl"></canvas>
+    <div id="hud"></div>
+    <div id="crosshair">SUPERPLANE.COM</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ======================================================================
+   CONSTANTS / PALETTE
+====================================================================== */
+var COLOR_BASE   = 0xe7e5df;
+var COLOR_ACCENT = 0xff5a1f;
+var COLOR_BG     = 0x0b0b0c;
+var MAX_INSTANCES = 1300;
+
+/* ======================================================================
+   MODE PARAM CONFIG
+====================================================================== */
+var MODES = {
+  field: {
+    label: 'FIELD PARAMS',
+    params: [
+      {key:'count',     label:'PARTICLES',     min:50,  max:800, step:10,  def:300},
+      {key:'poles',     label:'POLE COUNT',    min:1,   max:4,   step:1,   def:2},
+      {key:'strength',  label:'POLE STRENGTH', min:0.2, max:3,   step:0.05,def:1},
+      {key:'speed',     label:'FLOW SPEED',    min:0.1, max:3,   step:0.05,def:1},
+      {key:'cursorPull',label:'CURSOR PULL',   min:0,   max:3,   step:0.05,def:1.2}
+    ]
+  },
+  school: {
+    label: 'SCHOOL PARAMS',
+    params: [
+      {key:'count',      label:'AGENTS',      min:20, max:220, step:5,   def:110},
+      {key:'cohesion',   label:'COHESION',    min:0,  max:2,   step:0.02,def:0.6},
+      {key:'separation', label:'SEPARATION',  min:0,  max:2,   step:0.02,def:0.9},
+      {key:'alignment',  label:'ALIGNMENT',   min:0,  max:2,   step:0.02,def:0.8},
+      {key:'cursorPull', label:'CURSOR PULL', min:0,  max:3,   step:0.05,def:1.0},
+      {key:'speed',      label:'SWIM SPEED',  min:0.1,max:3,   step:0.05,def:1.2}
+    ]
+  },
+  growth: {
+    label: 'GROWTH PARAMS',
+    params: [
+      {key:'maxSegments', label:'MAX SEGMENTS', min:100,max:1200,step:20, def:500},
+      {key:'maxDepth',    label:'MAX DEPTH',    min:3,  max:12,  step:1,  def:7},
+      {key:'branchAngle', label:'BRANCH ANGLE', min:5,  max:60,  step:1,  def:28},
+      {key:'variance',    label:'VARIANCE',     min:0,  max:1,   step:0.02,def:0.4},
+      {key:'spawnChance', label:'SPAWN CHANCE', min:0,  max:1,   step:0.02,def:0.65},
+      {key:'growSpeed',   label:'GROW SPEED',   min:0.2,max:4,   step:0.05,def:1.4},
+      {key:'cursorPull',  label:'CURSOR BIAS',  min:0,  max:2,   step:0.05,def:0.8}
+    ]
+  }
+};
+
+var GLOBAL_PARAMS = [
+  {key:'arrowScale',   label:'ARROW SCALE',   min:0.3,max:2.5,step:0.05,def:1.0},
+  {key:'accentRadius', label:'ACCENT RADIUS', min:0,  max:8,  step:0.1, def:3.0}
+];
+
+var cfg = {global:{}, field:{}, school:{}, growth:{}};
+[GLOBAL_PARAMS].forEach(function(list){ list.forEach(function(p){ cfg.global[p.key]=p.def; }); });
+Object.keys(MODES).forEach(function(m){ MODES[m].params.forEach(function(p){ cfg[m][p.key]=p.def; }); });
+
+var state = { mode:'field', autoRotate:false };
+
+/* ======================================================================
+   PANEL BUILDING
+====================================================================== */
+function makeRow(param, getVal, setVal, onChange){
+  var row = document.createElement('div'); row.className='ctrl-row';
+  var val = document.createElement('span'); val.className='ctrl-val';
+  var input = document.createElement('input'); input.type='range'; input.className='ctrl-bar';
+  input.min=param.min; input.max=param.max; input.step=param.step; input.value=getVal();
+  var label = document.createElement('span'); label.className='ctrl-label'; label.textContent=param.label;
+
+  function refresh(){
+    var v = parseFloat(input.value);
+    var isInt = Math.abs(param.step - Math.round(param.step)) < 1e-9 && param.step >= 1;
+    val.textContent = isInt ? String(Math.round(v)) : v.toFixed(2);
+    var pct = (v-param.min)/(param.max-param.min)*100;
+    input.style.background = 'linear-gradient(to right, var(--ink) 0%, var(--ink) '+pct+'%, var(--track) '+pct+'%, var(--track) 100%)';
+  }
+  input.addEventListener('input', function(){
+    setVal(parseFloat(input.value));
+    refresh();
+    if(onChange) onChange();
+  });
+  refresh();
+  row.appendChild(val); row.appendChild(input); row.appendChild(label);
+  return row;
+}
+
+var globalParamsEl = document.getElementById('globalParams');
+GLOBAL_PARAMS.forEach(function(p){
+  globalParamsEl.appendChild(makeRow(p,
+    function(){ return cfg.global[p.key]; },
+    function(v){ cfg.global[p.key]=v; }
+  ));
+});
+
+var modeParamsEl = document.getElementById('modeParams');
+var modeSectionLabel = document.getElementById('modeSectionLabel');
+
+function rebuildModeParams(){
+  modeParamsEl.innerHTML = '';
+  modeSectionLabel.textContent = MODES[state.mode].label;
+  MODES[state.mode].params.forEach(function(p){
+    modeParamsEl.appendChild(makeRow(p,
+      function(){ return cfg[state.mode][p.key]; },
+      function(v){ cfg[state.mode][p.key]=v; },
+      function(){ onModeParamChange(p.key); }
+    ));
+  });
+}
+
+function onModeParamChange(key){
+  if(state.mode==='field' && key==='count') initField();
+  if(state.mode==='field' && key==='poles') initField();
+  if(state.mode==='school' && key==='count') initSchool();
+}
+
+var tabs = document.querySelectorAll('.tab');
+tabs.forEach(function(t){
+  t.addEventListener('click', function(){
+    tabs.forEach(function(x){x.classList.remove('active');});
+    t.classList.add('active');
+    state.mode = t.getAttribute('data-mode');
+    rebuildModeParams();
+    resetSimForMode();
+  });
+});
+tabs[0].classList.add('active');
+rebuildModeParams();
+
+document.getElementById('btnRotate').addEventListener('click', function(){
+  state.autoRotate = !state.autoRotate;
+  this.classList.toggle('on', state.autoRotate);
+});
+document.getElementById('btnReset').addEventListener('click', function(){
+  resetSimForMode();
+  orbit.radius = 8; orbit.theta = 0.6; orbit.phi = 1.2;
+});
+
+/* ======================================================================
+   THREE.JS SETUP
+====================================================================== */
+var canvas = document.getElementById('gl');
+var wrap = document.getElementById('canvas-wrap');
+var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.setClearColor(COLOR_BG, 1);
+
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+
+var orbit = {radius:8, theta:0.6, phi:1.2};
+function applyOrbit(){
+  camera.position.x = orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta);
+  camera.position.y = orbit.radius * Math.cos(orbit.phi);
+  camera.position.z = orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta);
+  camera.lookAt(0,0,0);
+}
+applyOrbit();
+
+function resize(){
+  var w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------------- arrow geometry (also used for SVG export) ---------------- */
+var SW = 0.09, HW = 0.22; // shaft half-width, head half-width
+var OUTLINE = [
+  new THREE.Vector3(-0.5,  SW, 0), // 0 tail-top
+  new THREE.Vector3( 0.05, SW, 0), // 1 shoulder-top-inner
+  new THREE.Vector3( 0.05, HW, 0), // 2 shoulder-top-outer
+  new THREE.Vector3( 0.5,  0,  0), // 3 tip
+  new THREE.Vector3( 0.05,-HW, 0), // 4 shoulder-bottom-outer
+  new THREE.Vector3( 0.05,-SW, 0), // 5 shoulder-bottom-inner
+  new THREE.Vector3(-0.5, -SW, 0)  // 6 tail-bottom
+];
+function buildArrowGeometry(){
+  var tris = [[0,1,2],[0,2,3],[0,3,4],[0,4,5],[0,5,6]];
+  var positions = [];
+  tris.forEach(function(t){
+    t.forEach(function(i){
+      var p = OUTLINE[i];
+      positions.push(p.x, p.y, p.z);
+    });
+  });
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+var arrowGeo = buildArrowGeometry();
+var baseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE, side:THREE.DoubleSide});
+var accentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT, side:THREE.DoubleSide});
+
+var baseMesh = new THREE.InstancedMesh(arrowGeo, baseMat, MAX_INSTANCES);
+var accentMesh = new THREE.InstancedMesh(arrowGeo, accentMat, MAX_INSTANCES);
+baseMesh.count = 0; accentMesh.count = 0;
+scene.add(baseMesh, accentMesh);
+
+/* pole markers (field mode only) */
+var poleGroup = new THREE.Group();
+scene.add(poleGroup);
+var poleGeo = new THREE.RingGeometry(0.04,0.06,16);
+var poleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
+
+/* ======================================================================
+   INTERACTION (orbit drag, wheel zoom, cursor raycast)
+====================================================================== */
+var raycaster = new THREE.Raycaster();
+var groundPlane = new THREE.Plane(new THREE.Vector3(0,0,1), 0);
+var interactionPoint = new THREE.Vector3();
+var interactionActive = false;
+var mouseNDC = new THREE.Vector2();
+var isDragging = false, dragMoved = false, lastX=0, lastY=0;
+
+function updatePointerNDC(e){
+  var rect = canvas.getBoundingClientRect();
+  mouseNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  mouseNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
+}
+
+canvas.addEventListener('pointerdown', function(e){
+  isDragging = true; dragMoved = false; lastX=e.clientX; lastY=e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', function(e){
+  updatePointerNDC(e);
+  interactionActive = true;
+  raycaster.setFromCamera(mouseNDC, camera);
+  raycaster.ray.intersectPlane(groundPlane, interactionPoint);
+
+  if(isDragging){
+    var dx = e.clientX-lastX, dy = e.clientY-lastY;
+    if(Math.abs(dx)+Math.abs(dy) > 3) dragMoved = true;
+    if(dragMoved){
+      orbit.theta -= dx*0.006;
+      orbit.phi = Math.min(2.7, Math.max(0.35, orbit.phi - dy*0.006));
+    }
+    lastX=e.clientX; lastY=e.clientY;
+  }
+});
+canvas.addEventListener('pointerup', function(e){
+  if(!dragMoved && state.mode==='growth'){
+    updatePointerNDC(e);
+    raycaster.setFromCamera(mouseNDC, camera);
+    var hit = new THREE.Vector3();
+    raycaster.ray.intersectPlane(groundPlane, hit);
+    resetGrowth(hit);
+  }
+  isDragging = false; dragMoved = false;
+});
+canvas.addEventListener('pointerleave', function(){ interactionActive = false; });
+canvas.addEventListener('wheel', function(e){
+  e.preventDefault();
+  orbit.radius = Math.min(20, Math.max(3, orbit.radius*(1+e.deltaY*0.001)));
+}, {passive:false});
+
+/* ======================================================================
+   FIELD MODE
+====================================================================== */
+var fieldParticles = [];
+var poles = [];
+function computePoles(){
+  var n = cfg.field.poles;
+  poles = [];
+  poleGroup.clear();
+  for(var i=0;i<n;i++){
+    var a = (i/n)*Math.PI*2;
+    var p = new THREE.Vector3(Math.cos(a)*2.2, Math.sin(a)*2.2*0.6, Math.sin(a*2)*1.0);
+    poles.push(p);
+    var m = new THREE.Mesh(poleGeo, poleMat);
+    m.position.copy(p);
+    poleGroup.add(m);
+  }
+}
+function initField(){
+  computePoles();
+  var n = cfg.field.count;
+  fieldParticles = [];
+  for(var i=0;i<n;i++){
+    var pole = poles[Math.floor(Math.random()*poles.length)] || new THREE.Vector3();
+    var ang = Math.random()*Math.PI*2;
+    var r = 0.6 + Math.random()*3.2;
+    fieldParticles.push({
+      pos: new THREE.Vector3(pole.x+Math.cos(ang)*r, pole.y+Math.sin(ang)*r, (Math.random()-0.5)*1.5),
+      vel: new THREE.Vector3(),
+      seed: Math.random()*1000
+    });
+  }
+}
+var tmpRel = new THREE.Vector3(), tmpTan = new THREE.Vector3(), tmpField = new THREE.Vector3();
+function fieldVectorAt(pos){
+  tmpField.set(0,0,0);
+  for(var i=0;i<poles.length;i++){
+    tmpRel.subVectors(pos, poles[i]);
+    var d2 = Math.max(tmpRel.lengthSq(), 0.05);
+    tmpTan.set(-tmpRel.y, tmpRel.x, 0);
+    if(tmpTan.lengthSq()>1e-8) tmpTan.normalize();
+    tmpTan.multiplyScalar(cfg.field.strength*3.0/Math.sqrt(d2));
+    tmpField.add(tmpTan);
+  }
+  if(interactionActive && cfg.field.cursorPull>0){
+    tmpRel.subVectors(pos, interactionPoint);
+    var d2c = Math.max(tmpRel.lengthSq(), 0.05);
+    tmpTan.set(-tmpRel.y, tmpRel.x, 0);
+    if(tmpTan.lengthSq()>1e-8) tmpTan.normalize();
+    tmpTan.multiplyScalar(cfg.field.cursorPull*3.0/Math.sqrt(d2c));
+    tmpField.add(tmpTan);
+  }
+  return tmpField;
+}
+function updateField(dt, time){
+  for(var i=0;i<fieldParticles.length;i++){
+    var pt = fieldParticles[i];
+    var f = fieldVectorAt(pt.pos);
+    pt.vel.lerp(f, 0.15);
+    pt.pos.addScaledVector(pt.vel, dt*cfg.field.speed);
+    pt.pos.z += Math.sin(time*0.5+pt.seed)*0.01;
+  }
+}
+
+/* ======================================================================
+   SCHOOL MODE (boids)
+====================================================================== */
+var agents = [];
+function initSchool(){
+  var n = cfg.school.count;
+  agents = [];
+  for(var i=0;i<n;i++){
+    agents.push({
+      pos: new THREE.Vector3((Math.random()-0.5)*4,(Math.random()-0.5)*4,(Math.random()-0.5)*2),
+      vel: new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)*0.3)
+    });
+  }
+}
+var NEIGHBOR_R = 1.6, SEP_R = 0.55;
+function updateSchool(dt){
+  var n = agents.length;
+  var c = cfg.school;
+  for(var i=0;i<n;i++){
+    var a = agents[i];
+    var coh = new THREE.Vector3(), ali = new THREE.Vector3(), sep = new THREE.Vector3();
+    var count = 0;
+    for(var j=0;j<n;j++){
+      if(i===j) continue;
+      var b = agents[j];
+      var d2 = a.pos.distanceToSquared(b.pos);
+      if(d2 < NEIGHBOR_R*NEIGHBOR_R){
+        coh.add(b.pos); ali.add(b.vel); count++;
+        if(d2 < SEP_R*SEP_R && d2>1e-6){
+          var away = new THREE.Vector3().subVectors(a.pos,b.pos).multiplyScalar(1/d2);
+          sep.add(away);
+        }
+      }
+    }
+    var force = new THREE.Vector3();
+    if(count>0){
+      coh.divideScalar(count).sub(a.pos).multiplyScalar(c.cohesion);
+      ali.divideScalar(count).sub(a.vel).multiplyScalar(c.alignment);
+      force.add(coh).add(ali);
+    }
+    force.add(sep.multiplyScalar(c.separation));
+    force.addScaledVector(a.pos, -0.02); // containment
+    if(interactionActive && c.cursorPull>0){
+      var toC = new THREE.Vector3().subVectors(interactionPoint, a.pos).multiplyScalar(c.cursorPull*0.4);
+      force.add(toC);
+    }
+    a.vel.addScaledVector(force, dt);
+    var maxSpeed = 2.2;
+    if(a.vel.length()>maxSpeed) a.vel.setLength(maxSpeed);
+    a.pos.addScaledVector(a.vel, dt*c.speed);
+  }
+}
+
+/* ======================================================================
+   GROWTH MODE
+====================================================================== */
+var segments = [];
+var activeTwigs = [];
+var growthAccum = 0, resetPending = false, resetTimer = 0;
+var lastSeed = new THREE.Vector3(0,-2.6,0);
+
+function resetGrowth(seedPos){
+  if(seedPos) lastSeed.copy(seedPos);
+  segments = [];
+  activeTwigs = [{pos:lastSeed.clone(), dir:new THREE.Vector3(0,1,0), len:0.9, depth:0}];
+  resetPending = false; resetTimer = 0; growthAccum = 0;
+}
+var AXIS_POOL = [];
+(function(){ for(var i=0;i<24;i++) AXIS_POOL.push(new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).normalize()); })();
+
+function growthStep(){
+  var c = cfg.growth;
+  var newTwigs = [];
+  for(var t=0;t<activeTwigs.length;t++){
+    var twig = activeTwigs[t];
+    var dir = twig.dir.clone();
+    if(interactionActive && c.cursorPull>0){
+      var toC = new THREE.Vector3().subVectors(interactionPoint, twig.pos);
+      if(toC.lengthSq()>1e-6) toC.normalize();
+      dir.lerp(toC, Math.min(0.9,0.15*c.cursorPull)).normalize();
+    }
+    dir.x += (Math.random()-0.5)*c.variance*0.6;
+    dir.y += (Math.random()-0.5)*c.variance*0.6;
+    dir.z += (Math.random()-0.5)*c.variance*0.3;
+    if(dir.lengthSq()<1e-8) dir.set(0,1,0);
+    dir.normalize();
+
+    var len = twig.len;
+    var newPos = twig.pos.clone().addScaledVector(dir, len);
+    segments.push({pos:twig.pos.clone(), dir:dir.clone(), len:len});
+
+    var nd = twig.depth+1;
+    if(nd < c.maxDepth && segments.length < c.maxSegments){
+      if(Math.random() < c.spawnChance){
+        for(var b=0;b<2;b++){
+          var bdir = dir.clone();
+          var ang = (c.branchAngle*Math.PI/180) * (b===0?1:-1);
+          var axis = AXIS_POOL[Math.floor(Math.random()*AXIS_POOL.length)];
+          bdir.applyAxisAngle(axis, ang);
+          newTwigs.push({pos:newPos.clone(), dir:bdir.normalize(), len:len*0.78, depth:nd});
+        }
+      } else {
+        newTwigs.push({pos:newPos.clone(), dir:dir, len:len*0.85, depth:nd});
+      }
+    }
+  }
+  activeTwigs = newTwigs;
+  if(activeTwigs.length===0 || segments.length>=c.maxSegments){
+    resetPending = true; resetTimer = 1.0;
+  }
+}
+function updateGrowth(dt){
+  if(resetPending){
+    resetTimer -= dt;
+    if(resetTimer<=0) resetGrowth();
+    return;
+  }
+  growthAccum += dt;
+  var interval = 0.5/Math.max(0.05,cfg.growth.growSpeed);
+  var guard = 0;
+  while(growthAccum > interval && guard < 20){
+    growthAccum -= interval;
+    growthStep();
+    guard++;
+    if(resetPending) break;
+  }
+}
+resetGrowth();
+
+/* ======================================================================
+   COMMON: compose instances + assign base/accent
+====================================================================== */
+var X_AXIS = new THREE.Vector3(1,0,0);
+var tmpQuat = new THREE.Quaternion();
+var tmpScale = new THREE.Vector3();
+var tmpMat = new THREE.Matrix4();
+var frameArrows = []; // for SVG export: {pos, dir, len, accent}
+
+function assignInstances(list, getPDL){
+  frameArrows.length = 0;
+  var bi=0, ai=0;
+  var accentR2 = cfg.global.accentRadius*cfg.global.accentRadius;
+  for(var i=0;i<list.length;i++){
+    var pdl = getPDL(list[i]);
+    if(!pdl) continue;
+    var pos = pdl.pos, dir = pdl.dir, len = pdl.len*cfg.global.arrowScale;
+    if(dir.lengthSq()<1e-8) dir = X_AXIS;
+    var isAccent = interactionActive && pos.distanceToSquared(interactionPoint) < accentR2;
+    tmpQuat.setFromUnitVectors(X_AXIS, dir);
+    tmpScale.set(len, cfg.global.arrowScale, cfg.global.arrowScale);
+    tmpMat.compose(pos, tmpQuat, tmpScale);
+    if(isAccent){ if(ai<MAX_INSTANCES){ accentMesh.setMatrixAt(ai++, tmpMat); } }
+    else { if(bi<MAX_INSTANCES){ baseMesh.setMatrixAt(bi++, tmpMat); } }
+    if(frameArrows.length < MAX_INSTANCES*2){
+      frameArrows.push({pos:pos.clone(), dir:dir.clone(), len:len, accent:isAccent});
+    }
+  }
+  baseMesh.count = bi; accentMesh.count = ai;
+  baseMesh.instanceMatrix.needsUpdate = true;
+  accentMesh.instanceMatrix.needsUpdate = true;
+}
+
+var FIELD_LEN = 0.4, SCHOOL_LEN = 0.34;
+function composeForMode(){
+  if(state.mode==='field'){
+    poleGroup.visible = true;
+    assignInstances(fieldParticles, function(p){
+      var d = p.vel.lengthSq()>1e-6 ? p.vel.clone().normalize() : X_AXIS;
+      return {pos:p.pos, dir:d, len:FIELD_LEN};
+    });
+  } else if(state.mode==='school'){
+    poleGroup.visible = false;
+    assignInstances(agents, function(a){
+      var d = a.vel.lengthSq()>1e-6 ? a.vel.clone().normalize() : X_AXIS;
+      return {pos:a.pos, dir:d, len:SCHOOL_LEN};
+    });
+  } else if(state.mode==='growth'){
+    poleGroup.visible = false;
+    assignInstances(segments, function(s){
+      var center = s.pos.clone().addScaledVector(s.dir, s.len*0.5);
+      return {pos:center, dir:s.dir, len:s.len};
+    });
+  }
+}
+
+function resetSimForMode(){
+  if(state.mode==='field') initField();
+  else if(state.mode==='school') initSchool();
+  else if(state.mode==='growth') resetGrowth();
+}
+initField(); initSchool();
+
+/* ======================================================================
+   MAIN LOOP
+====================================================================== */
+var clock = new THREE.Clock();
+var readoutEl = document.getElementById('readout');
+var hudEl = document.getElementById('hud');
+var elapsed = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  var dt = Math.min(0.05, clock.getDelta());
+  elapsed += dt;
+
+  if(state.mode==='field') updateField(dt, elapsed);
+  else if(state.mode==='school') updateSchool(dt);
+  else if(state.mode==='growth') updateGrowth(dt);
+
+  composeForMode();
+
+  if(state.autoRotate) orbit.theta += dt*0.15;
+  applyOrbit();
+
+  renderer.render(scene, camera);
+
+  var activeCount = state.mode==='field' ? fieldParticles.length :
+                    state.mode==='school' ? agents.length : segments.length;
+  readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
+  hudEl.innerHTML = 'MODE: <b>'+state.mode.toUpperCase()+'</b> &nbsp;/&nbsp; ARROWS: <b>'+activeCount+'</b> &nbsp;/&nbsp; '+
+    (interactionActive?'CURSOR ACTIVE':'CURSOR IDLE');
+}
+animate();
+
+/* ======================================================================
+   EXPORT
+====================================================================== */
+function downloadBlob(content, mime, filename){
+  var blob = (content instanceof Blob) ? content : new Blob([content], {type:mime});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+}
+
+document.getElementById('btnPng').addEventListener('click', function(){
+  renderer.render(scene, camera);
+  canvas.toBlob(function(blob){
+    downloadBlob(blob, 'image/png', 'superplane-'+state.mode+'.png');
+  }, 'image/png');
+});
+
+document.getElementById('btnSvg').addEventListener('click', function(){
+  var w = renderer.domElement.width, h = renderer.domElement.height;
+  var baseParts = [], accentParts = [];
+  for(var i=0;i<frameArrows.length;i++){
+    var a = frameArrows[i];
+    tmpQuat.setFromUnitVectors(X_AXIS, a.dir);
+    tmpScale.set(a.len, cfg.global.arrowScale, cfg.global.arrowScale);
+    tmpMat.compose(a.pos, tmpQuat, tmpScale);
+    var pts = [];
+    for(var k=0;k<OUTLINE.length;k++){
+      var wp = OUTLINE[k].clone().applyMatrix4(tmpMat);
+      var proj = wp.clone().project(camera);
+      var x = (proj.x*0.5+0.5)*w;
+      var y = (1-(proj.y*0.5+0.5))*h;
+      pts.push(x.toFixed(1)+','+y.toFixed(1));
+    }
+    var poly = '<polygon points="'+pts.join(' ')+'"/>';
+    if(a.accent) accentParts.push(poly); else baseParts.push(poly);
+  }
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+
+    '<rect width="100%" height="100%" fill="#0b0b0c"/>'+
+    '<g fill="#e7e5df">'+baseParts.join('')+'</g>'+
+    '<g fill="#ff5a1f">'+accentParts.join('')+'</g>'+
+    '</svg>';
+  downloadBlob(svg, 'image/svg+xml', 'superplane-'+state.mode+'.svg');
+});
+
+})();
+</script>
+</body>
+</html>
