@@ -10,7 +10,7 @@
  *
  * mount(target, options):
  *   target  - CSS selector string or a DOM element
- *   options.mode            'field' | 'school' | 'growth'   (default 'field')
+ *   options.mode            'field' | 'school' | 'growth' | 'network'   (default 'field')
  *   options.panel           show the utility control panel  (default false)
  *   options.allowModeSwitch show FIELD/SCHOOL/GROWTH tabs, only used if panel:true (default true)
  *   options.height          CSS height if the container has none set, e.g. '520px' (default '100%')
@@ -61,6 +61,19 @@ var MODES = {
       {key:'spawnChance', label:'SPAWN CHANCE', min:0,  max:1,   step:0.02,def:0.44},
       {key:'growSpeed',   label:'GROW SPEED',   min:0.2,max:4,   step:0.05,def:0.5},
       {key:'cursorPull',  label:'CURSOR BIAS',  min:0,  max:2,   step:0.05,def:0.25}
+    ]
+  },
+  network: {
+    label: 'NETWORK PARAMS',
+    params: [
+      {key:'count',        label:'NODES',        min:15, max:100,step:5,   def:45},
+      {key:'edgesPerNode', label:'CONNECTIONS',  min:1,  max:4,  step:1,   def:2},
+      {key:'curviness',    label:'CURVE AMOUNT', min:0,  max:2,  step:0.05,def:0.8},
+      {key:'sway',         label:'SWAY',         min:0,  max:2,  step:0.05,def:1.0},
+      {key:'swaySpeed',    label:'SWAY SPEED',   min:0.1,max:3,  step:0.05,def:0.6},
+      {key:'cohesion',     label:'COHESION',     min:0,  max:2,  step:0.02,def:0.5},
+      {key:'cursorPull',   label:'CURSOR PULL',  min:0,  max:3,  step:0.05,def:1.5},
+      {key:'nodeSize',     label:'NODE SIZE',    min:0.3,max:2.5,step:0.05,def:1.0}
     ]
   }
 };
@@ -115,6 +128,8 @@ var FLAT_STYLE_KEYS = {flat:true, chevron:true};
 var ARROW_LOCAL_POINTS_BY_STYLE = {}; // style key -> deduplicated local vertices, used for SVG silhouette export
 var sharedArrowGeoByStyle = {};       // style key -> BufferGeometry
 var sharedBaseMat = null, sharedAccentMat = null, sharedPoleGeo = null, sharedPoleMat = null;
+var sharedNodeGeo = null, sharedLineMatBase = null, sharedLineMatAccent = null;
+var MAX_NETWORK_NODES = 150, MAX_NETWORK_EDGES = 400, EDGE_SEGMENTS = 14;
 
 function mergeGeometries(geoList){
   var totalVerts = 0;
@@ -243,6 +258,28 @@ function ensureSharedResources(){
   sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT});
   sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
   sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
+  sharedNodeGeo = new THREE.PlaneGeometry(1,1);
+  sharedLineMatBase = new THREE.LineBasicMaterial({color:COLOR_BASE, transparent:true, opacity:0.55});
+  sharedLineMatAccent = new THREE.LineBasicMaterial({color:COLOR_ACCENT, transparent:true, opacity:0.85});
+}
+
+/* ---------------- standard camera-facing sprite billboard (for NETWORK node rectangles) ----------------
+   Unlike computeFlatOrientation (which tracks a direction vector), a node rectangle has
+   no direction — it just faces the camera, upright, like a classic billboarded sprite. */
+var SB_camDir=null, SB_x=null, SB_y=null, SB_up=null, SB_mat=null;
+function computeSpriteOrientation(pos, cameraPosition, outQuat){
+  if(!SB_camDir){
+    SB_camDir=new THREE.Vector3(); SB_x=new THREE.Vector3(); SB_y=new THREE.Vector3();
+    SB_up=new THREE.Vector3(0,1,0); SB_mat=new THREE.Matrix4();
+  }
+  SB_camDir.subVectors(cameraPosition, pos);
+  if(SB_camDir.lengthSq()<1e-8) SB_camDir.set(0,0,1);
+  SB_camDir.normalize();
+  SB_x.crossVectors(SB_up, SB_camDir);
+  if(SB_x.lengthSq()<1e-6) SB_x.set(1,0,0); else SB_x.normalize();
+  SB_y.crossVectors(SB_camDir, SB_x).normalize();
+  SB_mat.makeBasis(SB_x, SB_y, SB_camDir);
+  outQuat.setFromRotationMatrix(SB_mat);
 }
 
 /* ---------------- camera-facing orientation for the 'flat' style ----------------
@@ -421,7 +458,7 @@ function mount(target, options){
   var showPanel = !!options.panel;
   var allowModeSwitch = options.allowModeSwitch !== false;
 
-  var cfg = {global:{}, field:{}, school:{}, growth:{}};
+  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}};
   GLOBAL_PARAMS.forEach(function(p){ cfg.global[p.key] = p.def; });
   cfg.global.arrowStyle = 'cone';
   Object.keys(MODES).forEach(function(m){
@@ -450,12 +487,13 @@ function mount(target, options){
 
     if(allowModeSwitch){
       var tabsRow = document.createElement('div');
-      tabsRow.style.cssText = 'display:flex;border:1px solid #1c1c1c;margin-bottom:14px;';
-      ['field','school','growth'].forEach(function(m, i){
+      tabsRow.style.cssText = 'display:flex;flex-wrap:wrap;border:1px solid #1c1c1c;margin-bottom:14px;';
+      var MODE_KEYS = ['field','school','growth','network'];
+      MODE_KEYS.forEach(function(m, i){
         var t = document.createElement('div');
         t.textContent = m.toUpperCase();
-        t.style.cssText = 'flex:1;text-align:center;padding:7px 0;cursor:pointer;user-select:none;'+
-          (i<2?'border-right:1px solid #1c1c1c;':'')+'background:'+(m===state.mode?'#141414':'#ececea')+';color:'+(m===state.mode?'#ececea':'#141414')+';';
+        t.style.cssText = 'flex:1 1 25%;text-align:center;padding:7px 0;cursor:pointer;user-select:none;'+
+          (i<MODE_KEYS.length-1?'border-right:1px solid #1c1c1c;':'')+'background:'+(m===state.mode?'#141414':'#ececea')+';color:'+(m===state.mode?'#ececea':'#141414')+';';
         t.addEventListener('click', function(){
           state.mode = m;
           Object.keys(tabsEls).forEach(function(k){
@@ -464,6 +502,7 @@ function mount(target, options){
           });
           rebuildModeParams();
           resetSimForMode();
+          updateArrowGlobalSectionVisibility();
         });
         tabsEls[m] = t;
         tabsRow.appendChild(t);
@@ -499,16 +538,27 @@ function mount(target, options){
 
     var globalParamsEl = document.createElement('div');
     panelEl.appendChild(globalParamsEl);
-    var lineThicknessRowEl = null;
+    var lineThicknessRowEl = null, arrowScaleRowEl = null;
     GLOBAL_PARAMS.forEach(function(p){
       var row = makeRow(p, function(){return cfg.global[p.key];}, function(v){cfg.global[p.key]=v;});
       globalParamsEl.appendChild(row);
       if(p.key === 'lineThickness') lineThicknessRowEl = row;
+      if(p.key === 'arrowScale') arrowScaleRowEl = row;
     });
     function updateLineThicknessVisibility(){
       if(lineThicknessRowEl) lineThicknessRowEl.style.display = FLAT_STYLE_KEYS[cfg.global.arrowStyle] ? 'none' : 'flex';
     }
     updateLineThicknessVisibility();
+    function updateArrowGlobalSectionVisibility(){
+      // ARROW STYLE / ARROW SCALE are meaningless for NETWORK (rectangles + curves,
+      // sized by its own NODE SIZE param instead) — hide them in that mode.
+      var isNetwork = state.mode === 'network';
+      styleRow.style.display = isNetwork ? 'none' : 'flex';
+      if(arrowScaleRowEl) arrowScaleRowEl.style.display = isNetwork ? 'none' : 'flex';
+      if(!isNetwork) updateLineThicknessVisibility();
+      else if(lineThicknessRowEl) lineThicknessRowEl.style.display = 'none';
+    }
+    updateArrowGlobalSectionVisibility();
 
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;margin:8px 0 14px;';
@@ -651,6 +701,24 @@ function mount(target, options){
 
   var poleGroup = new THREE.Group();
   scene.add(poleGroup);
+
+  /* ---------------- NETWORK mode meshes: node rectangles + edge lines ---------------- */
+  var nodeMesh = new THREE.InstancedMesh(sharedNodeGeo, sharedBaseMat, MAX_NETWORK_NODES);
+  var nodeAccentMesh = new THREE.InstancedMesh(sharedNodeGeo, sharedAccentMat, MAX_NETWORK_NODES);
+  nodeMesh.count = 0; nodeAccentMesh.count = 0;
+  scene.add(nodeMesh, nodeAccentMesh);
+
+  var edgeLines = []; // pre-allocated pool of THREE.Line, reused as edge count changes
+  function ensureEdgeLinePool(n){
+    while(edgeLines.length < n){
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((EDGE_SEGMENTS+1)*3), 3));
+      var line = new THREE.Line(geo, sharedLineMatBase);
+      line.frustumCulled = false;
+      scene.add(line);
+      edgeLines.push(line);
+    }
+  }
 
   /* ---------------- interaction ---------------- */
   var raycaster = new THREE.Raycaster();
@@ -899,6 +967,69 @@ function mount(target, options){
   }
   resetGrowth();
 
+  /* ---------------- NETWORK MODE ---------------- */
+  var networkNodes = [], networkEdges = [];
+  function initNetwork(){
+    var n = cfg.network.count;
+    networkNodes = [];
+    for(var i=0;i<n;i++){
+      networkNodes.push({
+        pos: new THREE.Vector3((Math.random()-0.5)*5,(Math.random()-0.5)*3.5,(Math.random()-0.5)*2.5),
+        vel: new THREE.Vector3(),
+        w: 0.35 + Math.random()*0.5,   // rectangle width, varied like the reference bars
+        h: 0.9 + Math.random()*2.6,    // rectangle height
+        swaySeed: Math.random()*1000
+      });
+    }
+    // fixed connection topology: each node links to a few others, chosen once so the
+    // graph doesn't rewire itself every frame — only the node positions drift.
+    networkEdges = [];
+    var perNode = Math.round(cfg.network.edgesPerNode);
+    for(var a=0;a<n && networkEdges.length<MAX_NETWORK_EDGES;a++){
+      for(var k=0;k<perNode;k++){
+        var b = Math.floor(Math.random()*n);
+        if(b===a) continue;
+        networkEdges.push({a:a, b:b, curveSeed:Math.random()*1000, curveSign:(Math.random()<0.5?-1:1)});
+        if(networkEdges.length>=MAX_NETWORK_EDGES) break;
+      }
+    }
+  }
+  var NET_NEIGHBOR_R = 2.2;
+  function updateNetwork(dt, time){
+    var n = networkNodes.length, c = cfg.network;
+    for(var i=0;i<n;i++){
+      var a = networkNodes[i];
+      var coh = new THREE.Vector3();
+      var count = 0;
+      for(var j=0;j<n;j++){
+        if(i===j) continue;
+        var b = networkNodes[j];
+        var d2 = a.pos.distanceToSquared(b.pos);
+        if(d2 < NET_NEIGHBOR_R*NET_NEIGHBOR_R){
+          if(d2 > 0.6*0.6){ coh.add(b.pos); count++; }
+          else {
+            var away = new THREE.Vector3().subVectors(a.pos,b.pos).multiplyScalar(1/Math.max(d2,0.05));
+            a.vel.addScaledVector(away, dt*0.8);
+          }
+        }
+      }
+      var force = new THREE.Vector3();
+      if(count>0){ coh.divideScalar(count).sub(a.pos).multiplyScalar(c.cohesion); force.add(coh); }
+      force.addScaledVector(a.pos, -0.015); // gentle containment so the graph doesn't drift off
+      if(interactionActive && c.cursorPull>0){
+        var toC = new THREE.Vector3().subVectors(interactionPoint, a.pos).multiplyScalar(c.cursorPull*0.3);
+        force.add(toC);
+      }
+      a.vel.addScaledVector(force, dt);
+      a.vel.multiplyScalar(0.96); // damping — a floating drift, not a swarm dash
+      a.pos.addScaledVector(a.vel, dt);
+      // slow independent sway per axis, on top of the physics drift, for a "living" feel
+      a.pos.x += Math.sin(time*c.swaySpeed + a.swaySeed)*0.003*c.sway;
+      a.pos.y += Math.cos(time*c.swaySpeed*0.8 + a.swaySeed*1.3)*0.003*c.sway;
+    }
+  }
+  function resetNetwork(){ initNetwork(); }
+
   /* ---------------- compose instances ---------------- */
   var X_AXIS=new THREE.Vector3(1,0,0), tmpQuat=new THREE.Quaternion(), tmpScale=new THREE.Vector3(), tmpMat=new THREE.Matrix4();
   var frameArrows = [];
@@ -931,18 +1062,21 @@ function mount(target, options){
   function composeForMode(time){
     if(state.mode==='field'){
       poleGroup.visible = true;
+      hideNetworkVisuals();
       assignInstances(fieldParticles, function(p){
         var d = p.vel.lengthSq()>1e-6 ? p.vel.clone().normalize() : X_AXIS;
         return {pos:p.pos, dir:d, len:FIELD_LEN};
       });
     } else if(state.mode==='school'){
       poleGroup.visible = false;
+      hideNetworkVisuals();
       assignInstances(agents, function(a){
         var d = a.vel.lengthSq()>1e-6 ? a.vel.clone().normalize() : X_AXIS;
         return {pos:a.pos, dir:d, len:SCHOOL_LEN};
       });
     } else if(state.mode==='growth'){
       poleGroup.visible = false;
+      hideNetworkVisuals();
       assignInstances(segments, function(s){
         // animate each segment growing outward from its own base point (like an
         // extending stick) instead of popping in at full length instantly.
@@ -953,14 +1087,78 @@ function mount(target, options){
         var center = s.pos.clone().addScaledVector(s.dir, curLen*0.5);
         return {pos:center, dir:s.dir, len:curLen};
       });
+    } else if(state.mode==='network'){
+      poleGroup.visible = false;
+      baseMesh.count = 0; accentMesh.count = 0;
+      baseMesh.instanceMatrix.needsUpdate = true; accentMesh.instanceMatrix.needsUpdate = true;
+      frameArrows.length = 0; // SVG export (arrow-silhouette based) has nothing to draw in this mode yet
+      renderNetworkFrame(time);
     }
   }
+  function hideNetworkVisuals(){
+    nodeMesh.count = 0; nodeAccentMesh.count = 0;
+    nodeMesh.instanceMatrix.needsUpdate = true; nodeAccentMesh.instanceMatrix.needsUpdate = true;
+    for(var i=0;i<edgeLines.length;i++) edgeLines[i].visible = false;
+  }
+  var netTmpQuat = new THREE.Quaternion(), netTmpScale = new THREE.Vector3();
+  var netTmpMat = new THREE.Matrix4(), netTmpMid = new THREE.Vector3(), netTmpPerp = new THREE.Vector3();
+  function renderNetworkFrame(time){
+    ensureEdgeLinePool(networkEdges.length);
+    var accentR2 = cfg.global.accentRadius*cfg.global.accentRadius;
+    var nodeSize = cfg.network.nodeSize;
+    var ni=0, ai=0;
+    for(var i=0;i<networkNodes.length;i++){
+      var node = networkNodes[i];
+      var isAccent = interactionActive && node.pos.distanceToSquared(interactionPoint) < accentR2;
+      computeSpriteOrientation(node.pos, camera.position, netTmpQuat);
+      netTmpScale.set(node.w*nodeSize, node.h*nodeSize, 1);
+      netTmpMat.compose(node.pos, netTmpQuat, netTmpScale);
+      if(isAccent){ if(ai<MAX_NETWORK_NODES) nodeAccentMesh.setMatrixAt(ai++, netTmpMat); }
+      else { if(ni<MAX_NETWORK_NODES) nodeMesh.setMatrixAt(ni++, netTmpMat); }
+    }
+    nodeMesh.count = ni; nodeAccentMesh.count = ai;
+    nodeMesh.instanceMatrix.needsUpdate = true; nodeAccentMesh.instanceMatrix.needsUpdate = true;
+
+    for(var e=0;e<networkEdges.length;e++){
+      var edge = networkEdges[e];
+      var line = edgeLines[e];
+      var pa = networkNodes[edge.a] ? networkNodes[edge.a].pos : null;
+      var pb = networkNodes[edge.b] ? networkNodes[edge.b].pos : null;
+      if(!pa || !pb){ line.visible = false; continue; }
+      line.visible = true;
+      netTmpMid.addVectors(pa, pb).multiplyScalar(0.5);
+      netTmpPerp.subVectors(pb, pa);
+      var segLen = netTmpPerp.length();
+      netTmpPerp.set(-netTmpPerp.y, netTmpPerp.x, netTmpPerp.z*0.4);
+      if(netTmpPerp.lengthSq()>1e-8) netTmpPerp.normalize();
+      var bulge = (0.15 + segLen*0.12) * cfg.network.curviness * edge.curveSign;
+      bulge += Math.sin(time*0.5 + edge.curveSeed) * 0.05 * cfg.network.curviness; // gentle breathing
+      var ctrl = netTmpMid.clone().addScaledVector(netTmpPerp, bulge);
+
+      var posAttr = line.geometry.attributes.position;
+      for(var s=0;s<=EDGE_SEGMENTS;s++){
+        var t = s/EDGE_SEGMENTS;
+        var mt = 1-t;
+        var x = mt*mt*pa.x + 2*mt*t*ctrl.x + t*t*pb.x;
+        var y = mt*mt*pa.y + 2*mt*t*ctrl.y + t*t*pb.y;
+        var z = mt*mt*pa.z + 2*mt*t*ctrl.z + t*t*pb.z;
+        posAttr.setXYZ(s, x, y, z);
+      }
+      posAttr.needsUpdate = true;
+      var edgeAccent = interactionActive &&
+        (pa.distanceToSquared(interactionPoint) < accentR2 || pb.distanceToSquared(interactionPoint) < accentR2);
+      line.material = edgeAccent ? sharedLineMatAccent : sharedLineMatBase;
+    }
+    for(var extra=networkEdges.length; extra<edgeLines.length; extra++) edgeLines[extra].visible = false;
+  }
+
   function resetSimForMode(){
     if(state.mode==='field') initField();
     else if(state.mode==='school') initSchool();
     else if(state.mode==='growth') resetGrowth();
+    else if(state.mode==='network') resetNetwork();
   }
-  initField(); initSchool();
+  initField(); initSchool(); initNetwork();
 
   /* ---------------- panel: mode params rebuild (needs functions above defined first) ---------------- */
   function rebuildModeParams(){
@@ -1065,6 +1263,7 @@ function mount(target, options){
     if(state.mode==='field') updateField(dt, elapsed);
     else if(state.mode==='school') updateSchool(dt);
     else if(state.mode==='growth') updateGrowth(dt, elapsed);
+    else if(state.mode==='network') updateNetwork(dt, elapsed);
 
     composeForMode(elapsed);
 
@@ -1075,7 +1274,8 @@ function mount(target, options){
 
     if(showPanel && readoutEl){
       var activeCount = state.mode==='field' ? fieldParticles.length :
-                         state.mode==='school' ? agents.length : segments.length;
+                         state.mode==='school' ? agents.length :
+                         state.mode==='network' ? networkNodes.length : segments.length;
       readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
     }
     if(camCoordsEl){
