@@ -215,33 +215,22 @@ function buildChevronArrowGeometry(){
   var headStart = 0.5 - CHEVRON_HEAD_LEN;
   var spread = CHEVRON_HEAD_LEN * Math.tan(CHEVRON_BARB_ANGLE*Math.PI/180);
 
-  // The barbs' back ends sit at (headStart, ±spread), far from the thin shaft's own
-  // edge (±w) at that same x — leaving open background showing through between the
-  // "V" and the leg. Fix: add a short flared "collar" quad that tapers the width
-  // from w up to spread over a short run, so the shaft's edge and the barbs' back
-  // ends land on the exact same points and the two pieces read as one connected shape.
-  var collarLen = 0.05;
-  var collarStartX = headStart - collarLen;
-  var shaftQuad = quadAlongSegment2D(-0.5, 0, collarStartX, 0, w);
-  var collarQuad = [
-    new THREE.Vector3(collarStartX,  w, 0),
-    new THREE.Vector3(headStart,     spread, 0),
-    new THREE.Vector3(headStart,    -spread, 0),
-    new THREE.Vector3(collarStartX, -w, 0)
-  ];
+  // Run the shaft's centerline all the way up to the tip, so its top edge lines up
+  // with the chevron's own peak instead of stopping short and leaving open space
+  // between the leg and the "V".
+  var shaftQuad   = quadAlongSegment2D(-0.5, 0, 0.5, 0, w);
   var barbTopQuad = quadAlongSegment2D(0.5, 0, headStart,  spread, w);
   var barbBotQuad = quadAlongSegment2D(0.5, 0, headStart, -spread, w);
 
   var positions = [];
   pushQuadTris(positions, shaftQuad);
-  pushQuadTris(positions, collarQuad);
   pushQuadTris(positions, barbTopQuad);
   pushQuadTris(positions, barbBotQuad);
 
   var geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.computeVertexNormals();
-  ARROW_LOCAL_POINTS_BY_STYLE.chevron = shaftQuad.concat(collarQuad, barbTopQuad, barbBotQuad);
+  ARROW_LOCAL_POINTS_BY_STYLE.chevron = shaftQuad.concat(barbTopQuad, barbBotQuad);
   return geo;
 }
 
