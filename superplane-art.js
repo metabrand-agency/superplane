@@ -73,7 +73,7 @@ var MODES = {
       {key:'swaySpeed',    label:'SWAY SPEED',   min:0.1,max:3,  step:0.05,def:0.6},
       {key:'cohesion',     label:'COHESION',     min:0,  max:2,  step:0.02,def:0.5},
       {key:'cursorPull',   label:'CURSOR PULL',  min:0,  max:3,  step:0.05,def:1.5},
-      {key:'nodeSize',     label:'NODE SIZE',    min:0.3,max:2.5,step:0.05,def:1.0}
+      {key:'nodeSize',     label:'NODE SIZE',    min:0.1,max:2.5,step:0.05,def:0.33}
     ]
   }
 };
@@ -976,8 +976,8 @@ function mount(target, options){
       networkNodes.push({
         pos: new THREE.Vector3((Math.random()-0.5)*5,(Math.random()-0.5)*3.5,(Math.random()-0.5)*2.5),
         vel: new THREE.Vector3(),
-        w: 0.35 + Math.random()*0.5,   // rectangle width, varied like the reference bars
-        h: 0.9 + Math.random()*2.6,    // rectangle height
+        w: 0.9 + Math.random()*2.6,    // rectangle width — wide, horizontal bars
+        h: 0.35 + Math.random()*0.5,   // rectangle height — kept short
         swaySeed: Math.random()*1000
       });
     }
