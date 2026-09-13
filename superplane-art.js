@@ -96,10 +96,21 @@ var FLAT_SHAFT_HALF_W = 0.015;
 var FLAT_HEAD_HALF_W  = 0.076;
 var FLAT_HEAD_LEN     = 0.19;
 
+// 'chevron' style: thin leg + a head made of two line strokes (a "<" angle) at the
+// SAME thickness as the leg, instead of a filled triangle.
+var CHEVRON_LINE_HALF_W  = 0.02;
+var CHEVRON_HEAD_LEN     = 0.22;
+var CHEVRON_BARB_ANGLE   = 28; // degrees, each barb's angle off the centerline
+
 var ARROW_STYLES = [
-  {key:'cone', label:'CONE (3D)'},
-  {key:'flat', label:'FLAT (UTILITARIAN)'}
+  {key:'cone',    label:'CONE (3D)'},
+  {key:'flat',    label:'FLAT (UTILITARIAN)'},
+  {key:'chevron', label:'CHEVRON (LINES)'}
 ];
+// styles that are flat 2D cards needing camera-facing billboarding, and where only
+// ARROW SCALE applies (no separate LINE THICKNESS control) — as opposed to 'cone',
+// which is a real 3D volume with its own thickness.
+var FLAT_STYLE_KEYS = {flat:true, chevron:true};
 
 var ARROW_LOCAL_POINTS_BY_STYLE = {}; // style key -> deduplicated local vertices, used for SVG silhouette export
 var sharedArrowGeoByStyle = {};       // style key -> BufferGeometry
@@ -183,10 +194,48 @@ function buildFlatArrowGeometry(){
   return geo;
 }
 
+function quadAlongSegment2D(ax, ay, bx, by, halfWidth){
+  var dx=bx-ax, dy=by-ay;
+  var len = Math.sqrt(dx*dx+dy*dy) || 1;
+  var nx = -dy/len*halfWidth, ny = dx/len*halfWidth;
+  return [
+    new THREE.Vector3(ax+nx, ay+ny, 0),
+    new THREE.Vector3(bx+nx, by+ny, 0),
+    new THREE.Vector3(bx-nx, by-ny, 0),
+    new THREE.Vector3(ax-nx, ay-ny, 0)
+  ];
+}
+function pushQuadTris(positions, q){
+  // winding order (0,2,1)+(0,3,2) gives a +Z-facing normal for this quad layout
+  [q[0],q[2],q[1], q[0],q[3],q[2]].forEach(function(p){ positions.push(p.x,p.y,p.z); });
+}
+
+function buildChevronArrowGeometry(){
+  var w = CHEVRON_LINE_HALF_W;
+  var headStart = 0.5 - CHEVRON_HEAD_LEN;
+  var spread = CHEVRON_HEAD_LEN * Math.tan(CHEVRON_BARB_ANGLE*Math.PI/180);
+
+  var shaftQuad   = quadAlongSegment2D(-0.5, 0, headStart, 0, w);
+  var barbTopQuad = quadAlongSegment2D(0.5, 0, headStart,  spread, w);
+  var barbBotQuad = quadAlongSegment2D(0.5, 0, headStart, -spread, w);
+
+  var positions = [];
+  pushQuadTris(positions, shaftQuad);
+  pushQuadTris(positions, barbTopQuad);
+  pushQuadTris(positions, barbBotQuad);
+
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  ARROW_LOCAL_POINTS_BY_STYLE.chevron = shaftQuad.concat(barbTopQuad, barbBotQuad);
+  return geo;
+}
+
 function ensureSharedResources(){
   if(sharedBaseMat) return; // already built
   sharedArrowGeoByStyle.cone = buildConeArrowGeometry();
   sharedArrowGeoByStyle.flat = buildFlatArrowGeometry();
+  sharedArrowGeoByStyle.chevron = buildChevronArrowGeometry();
   sharedBaseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE});
   sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT});
   sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
@@ -454,7 +503,7 @@ function mount(target, options){
       if(p.key === 'lineThickness') lineThicknessRowEl = row;
     });
     function updateLineThicknessVisibility(){
-      if(lineThicknessRowEl) lineThicknessRowEl.style.display = (cfg.global.arrowStyle === 'flat') ? 'none' : 'flex';
+      if(lineThicknessRowEl) lineThicknessRowEl.style.display = FLAT_STYLE_KEYS[cfg.global.arrowStyle] ? 'none' : 'flex';
     }
     updateLineThicknessVisibility();
 
@@ -853,7 +902,7 @@ function mount(target, options){
   function assignInstances(list, getPDL){
     frameArrows.length = 0;
     syncArrowStyleGeometry();
-    var isFlat = cfg.global.arrowStyle === 'flat';
+    var isFlat = !!FLAT_STYLE_KEYS[cfg.global.arrowStyle];
     var bi=0, ai=0;
     var accentR2 = cfg.global.accentRadius*cfg.global.accentRadius;
     var widthScale = isFlat ? cfg.global.arrowScale : cfg.global.arrowScale*cfg.global.lineThickness;
@@ -946,7 +995,7 @@ function mount(target, options){
     btnSvg.addEventListener('click', function(){
       var w = renderer.domElement.width, h = renderer.domElement.height;
       var baseParts=[], accentParts=[];
-      var isFlat = cfg.global.arrowStyle === 'flat';
+      var isFlat = !!FLAT_STYLE_KEYS[cfg.global.arrowStyle];
       var widthScale = isFlat ? cfg.global.arrowScale : cfg.global.arrowScale*cfg.global.lineThickness;
       var localPoints = ARROW_LOCAL_POINTS_BY_STYLE[cfg.global.arrowStyle];
       for(var i=0;i<frameArrows.length;i++){
