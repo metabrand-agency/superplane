@@ -1079,7 +1079,7 @@ function mount(target, options){
   var FIELD_LEN=0.4, SCHOOL_LEN=0.34;
   function composeForMode(time){
     if(state.mode==='field'){
-      poleGroup.visible = true;
+      poleGroup.visible = false;
       hideNetworkVisuals();
       for(var pgi=0; pgi<poleGroup.children.length; pgi++){
         var poleWorldZ = poles[pgi] ? poles[pgi].z : 0;
