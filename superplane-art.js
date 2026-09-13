@@ -309,6 +309,8 @@ function mount(target, options){
   container.appendChild(root);
 
   var panelEl = null, modeParamsEl = null, modeSectionLabel = null, readoutEl = null, tabsEls = {};
+  var camCoordsEl = null;
+  var cameraLocked = options.cameraLocked === true;
   if(showPanel){
     panelEl = document.createElement('div');
     panelEl.style.cssText = 'width:280px;min-width:280px;height:100%;overflow-y:auto;background:#ececea;border-right:1px solid #1c1c1c;padding:14px;box-sizing:border-box;';
@@ -363,10 +365,26 @@ function mount(target, options){
     });
     btnReset.addEventListener('click', function(){
       resetSimForMode();
-      orbit.radius = 8; orbit.theta = 0.6; orbit.phi = 1.2;
+      orbit.radius = 6.62; orbit.theta = 6.223844112611779; orbit.phi = 1.616174887346749;
     });
     btnRow.appendChild(btnRotate); btnRow.appendChild(btnReset);
     panelEl.appendChild(btnRow);
+
+    var lockRow = document.createElement('label');
+    lockRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;user-select:none;color:#141414;';
+    var lockCheckbox = document.createElement('input');
+    lockCheckbox.type = 'checkbox';
+    lockCheckbox.style.cssText = 'width:14px;height:14px;accent-color:#141414;cursor:pointer;flex:0 0 auto;';
+    var lockLabelText = document.createElement('span');
+    lockLabelText.textContent = 'LOCK CAMERA ROTATION';
+    lockCheckbox.checked = cameraLocked;
+    lockCheckbox.addEventListener('change', function(){ cameraLocked = lockCheckbox.checked; });
+    lockRow.appendChild(lockCheckbox); lockRow.appendChild(lockLabelText);
+    panelEl.appendChild(lockRow);
+
+    camCoordsEl = document.createElement('div');
+    camCoordsEl.style.cssText = 'margin-bottom:14px;line-height:1.6;color:#3a3a38;';
+    panelEl.appendChild(camCoordsEl);
 
     var divider1 = document.createElement('div');
     divider1.style.cssText = 'border-top:1px solid #1c1c1c;margin:14px 0;';
@@ -415,15 +433,6 @@ function mount(target, options){
   canvas.style.cssText = 'display:block;width:100%;height:100%;';
   canvasWrap.appendChild(canvas);
 
-  var camHud = null;
-  if(showPanel){
-    camHud = document.createElement('div');
-    camHud.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(11,11,12,0.6);'+
-      'color:#d8d6d0;font-family:'+FONT_STACK+';font-size:10px;line-height:1.6;padding:6px 9px;'+
-      'border:1px solid #2a2a28;pointer-events:none;white-space:nowrap;';
-    canvasWrap.appendChild(camHud);
-  }
-
   /* ======================================================================
      THREE SETUP (scoped to this instance)
   ====================================================================== */
@@ -433,7 +442,7 @@ function mount(target, options){
 
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  var orbit = {radius:8, theta:0.6, phi:1.2};
+  var orbit = {radius:6.62, theta:6.223844112611779, phi:1.616174887346749};
   if(options.camera){
     if(typeof options.camera.theta === 'number') orbit.theta = options.camera.theta;
     if(typeof options.camera.phi === 'number') orbit.phi = options.camera.phi;
@@ -498,7 +507,7 @@ function mount(target, options){
     if(isDragging){
       var dx = e.clientX-lastX, dy = e.clientY-lastY;
       if(Math.abs(dx)+Math.abs(dy) > 3) dragMoved = true;
-      if(dragMoved){
+      if(dragMoved && !cameraLocked){
         orbit.theta -= dx*0.006;
         orbit.phi = Math.min(2.7, Math.max(0.35, orbit.phi - dy*0.006));
       }
@@ -848,7 +857,8 @@ function mount(target, options){
 
       var idSlug = 'sp-embed-' + state.mode;
       var mountOptions = {mode: state.mode, panel: false, overrides: overridesObj,
-        camera: {theta: orbit.theta, phi: orbit.phi, radius: orbit.radius}};
+        camera: {theta: orbit.theta, phi: orbit.phi, radius: orbit.radius},
+        cameraLocked: cameraLocked};
       var snippet =
         '<!-- SuperPlane generative art \u2014 fills 100% of this block\'s width/height.\n' +
         '     Set the width/height on the wrapping element on your page. -->\n' +
@@ -879,7 +889,7 @@ function mount(target, options){
 
     composeForMode(elapsed);
 
-    if(state.autoRotate) orbit.theta += dt*0.15;
+    if(state.autoRotate && !cameraLocked) orbit.theta += dt*0.15;
     applyOrbit();
 
     renderer.render(scene, camera);
@@ -889,10 +899,10 @@ function mount(target, options){
                          state.mode==='school' ? agents.length : segments.length;
       readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
     }
-    if(camHud){
+    if(camCoordsEl){
       var thetaDeg = ((orbit.theta*180/Math.PI) % 360 + 360) % 360;
       var phiDeg = orbit.phi*180/Math.PI;
-      camHud.innerHTML = 'THETA &nbsp;: '+thetaDeg.toFixed(1)+'&deg;<br>PHI &nbsp;&nbsp;&nbsp;: '+phiDeg.toFixed(1)+'&deg;<br>RADIUS: '+orbit.radius.toFixed(2);
+      camCoordsEl.innerHTML = 'THETA &nbsp;: '+thetaDeg.toFixed(1)+'&deg;<br>PHI &nbsp;&nbsp;&nbsp;: '+phiDeg.toFixed(1)+'&deg;<br>RADIUS: '+orbit.radius.toFixed(2);
     }
   }
   animate();
