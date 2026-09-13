@@ -163,7 +163,15 @@ function buildFlatArrowGeometry(){
     new THREE.Vector3(headStart,-sw, 0), // 5 shoulder-bottom-inner
     new THREE.Vector3(-0.5,     -sw, 0)  // 6 tail-bottom
   ];
-  var tris = [[0,1,2],[0,2,3],[0,3,4],[0,4,5],[0,5,6]];
+  // Correct decomposition of this concave (notched) polygon: the shaft is a plain
+  // rectangle (tail corners + inner shoulder corners) and the head is one triangle
+  // (outer shoulder corners + tip). A naive single-vertex fan across all 7 points
+  // is WRONG here — vertices 1 and 5 are reflex (concave) corners, so fan triangles
+  // through them bulge outside the true silhouette (this is what produced the
+  // two-triangle "not an arrow" shape). Winding is reversed (…,1,0 / …,5,1 / …,4,3)
+  // so the face normal points to local +Z, which is the side the billboard faces
+  // toward the camera.
+  var tris = [[6,1,0],[6,5,1],[2,4,3]];
   var positions = [];
   tris.forEach(function(t){
     t.forEach(function(i){ var p=outline[i]; positions.push(p.x,p.y,p.z); });
