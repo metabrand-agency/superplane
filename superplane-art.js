@@ -75,18 +75,35 @@ var GLOBAL_PARAMS = [
    file never throws or no-ops just because three.js has not executed yet at parse time
    (script load order can vary by host page).
 
-   The arrow is a real 3D solid (cylinder shaft + cone head, merged into one non-indexed
-   BufferGeometry), not a flat 2D silhouette — so it still reads as an arrow from any
-   camera angle, including end-on. Proportions are based on the arrow2.svg reference
-   (head occupies roughly the last ~28% of total length; head radius roughly ~2x shaft
-   radius). Local space: length runs along local +X from -0.5 (tail) to +0.5 (tip). */
+   Two selectable arrow styles:
+   - 'cone'  — a real 3D solid (cylinder shaft + cone head). Reads as an arrow from any
+     camera angle, including end-on, because it's an actual 3D volume, not a flat plane.
+   - 'flat'  — a thin utilitarian line-and-triangle-head shape (from the arrow2.svg
+     reference), rendered as a flat 2D card. A flat card can vanish into a thin line when
+     viewed edge-on, so instead of orienting it purely from the 3D direction vector, it is
+     billboarded toward the camera each frame (see computeFlatOrientation): its face
+     always tilts toward the camera while its length axis tracks the on-screen projection
+     of the true direction — so it never degenerates into a sliver.
+
+   Local space for both styles: length runs along local +X from -0.5 (tail) to +0.5 (tip). */
 var HEAD_LEN = 0.30;      // fraction of total length occupied by the cone head
 var HEAD_RADIUS = 0.16;   // local head base radius
-var SHAFT_RADIUS = 0.055; // local shaft radius (this is what LINE THICKNESS scales)
+var SHAFT_RADIUS = 0.055; // local shaft radius (this is what LINE THICKNESS scales, cone style only)
 var RADIAL_SEGMENTS = 7;  // low-poly, keeps triangle count small across many instances
 
-var ARROW_LOCAL_POINTS = null; // deduplicated local vertices, used for SVG silhouette export
-var sharedArrowGeo = null, sharedBaseMat = null, sharedAccentMat = null, sharedPoleGeo = null, sharedPoleMat = null;
+// 'flat' style proportions, from the arrow2.svg reference (thin hairline shaft, wide flat head)
+var FLAT_SHAFT_HALF_W = 0.015;
+var FLAT_HEAD_HALF_W  = 0.076;
+var FLAT_HEAD_LEN     = 0.19;
+
+var ARROW_STYLES = [
+  {key:'cone', label:'CONE (3D)'},
+  {key:'flat', label:'FLAT (UTILITARIAN)'}
+];
+
+var ARROW_LOCAL_POINTS_BY_STYLE = {}; // style key -> deduplicated local vertices, used for SVG silhouette export
+var sharedArrowGeoByStyle = {};       // style key -> BufferGeometry
+var sharedBaseMat = null, sharedAccentMat = null, sharedPoleGeo = null, sharedPoleMat = null;
 
 function mergeGeometries(geoList){
   var totalVerts = 0;
@@ -117,7 +134,7 @@ function dedupPoints(float32arr){
   return out;
 }
 
-function buildArrowGeometry(){
+function buildConeArrowGeometry(){
   var shaftLen = 1 - HEAD_LEN;
   var shaftCenterX = -HEAD_LEN/2;
   var headCenterX = 0.5 - HEAD_LEN/2;
@@ -131,17 +148,71 @@ function buildArrowGeometry(){
   headGeo.translate(headCenterX, 0, 0);
 
   var merged = mergeGeometries([shaftGeo, headGeo]);
-  ARROW_LOCAL_POINTS = dedupPoints(merged.attributes.position.array);
+  ARROW_LOCAL_POINTS_BY_STYLE.cone = dedupPoints(merged.attributes.position.array);
   return merged;
 }
 
+function buildFlatArrowGeometry(){
+  var sw = FLAT_SHAFT_HALF_W, hw = FLAT_HEAD_HALF_W, headStart = 0.5 - FLAT_HEAD_LEN;
+  var outline = [
+    new THREE.Vector3(-0.5,      sw, 0), // 0 tail-top
+    new THREE.Vector3(headStart, sw, 0), // 1 shoulder-top-inner
+    new THREE.Vector3(headStart, hw, 0), // 2 shoulder-top-outer
+    new THREE.Vector3( 0.5,      0,  0), // 3 tip
+    new THREE.Vector3(headStart,-hw, 0), // 4 shoulder-bottom-outer
+    new THREE.Vector3(headStart,-sw, 0), // 5 shoulder-bottom-inner
+    new THREE.Vector3(-0.5,     -sw, 0)  // 6 tail-bottom
+  ];
+  var tris = [[0,1,2],[0,2,3],[0,3,4],[0,4,5],[0,5,6]];
+  var positions = [];
+  tris.forEach(function(t){
+    t.forEach(function(i){ var p=outline[i]; positions.push(p.x,p.y,p.z); });
+  });
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  ARROW_LOCAL_POINTS_BY_STYLE.flat = outline;
+  return geo;
+}
+
 function ensureSharedResources(){
-  if(sharedArrowGeo) return; // already built
-  sharedArrowGeo = buildArrowGeometry();
+  if(sharedBaseMat) return; // already built
+  sharedArrowGeoByStyle.cone = buildConeArrowGeometry();
+  sharedArrowGeoByStyle.flat = buildFlatArrowGeometry();
   sharedBaseMat = new THREE.MeshBasicMaterial({color:COLOR_BASE});
   sharedAccentMat = new THREE.MeshBasicMaterial({color:COLOR_ACCENT});
   sharedPoleGeo = new THREE.RingGeometry(0.04,0.06,16);
   sharedPoleMat = new THREE.MeshBasicMaterial({color:0x5c5c58, side:THREE.DoubleSide});
+}
+
+/* ---------------- camera-facing orientation for the 'flat' style ----------------
+   A flat 2D card can vanish into a sliver when viewed edge-on, so instead of
+   orienting it purely from the 3D direction vector, tilt its face toward the camera
+   each frame and only use the direction vector to choose which way it points *within*
+   that camera-facing plane (i.e. the on-screen projection of the true direction). */
+var FA_camDir = null, FA_x = null, FA_y = null, FA_up = null, FA_mat = null;
+function computeFlatOrientation(pos, dir, cameraPosition, outQuat){
+  if(!FA_camDir){
+    FA_camDir = new THREE.Vector3(); FA_x = new THREE.Vector3();
+    FA_y = new THREE.Vector3(); FA_up = new THREE.Vector3(0,1,0);
+    FA_mat = new THREE.Matrix4();
+  }
+  FA_camDir.subVectors(cameraPosition, pos);
+  if(FA_camDir.lengthSq() < 1e-8) FA_camDir.set(0,0,1);
+  FA_camDir.normalize();
+
+  FA_x.copy(dir).addScaledVector(FA_camDir, -dir.dot(FA_camDir));
+  if(FA_x.lengthSq() < 1e-6){
+    FA_x.copy(FA_up).addScaledVector(FA_camDir, -FA_up.dot(FA_camDir));
+    if(FA_x.lengthSq() < 1e-6) FA_x.set(1,0,0);
+  }
+  FA_x.normalize();
+
+  FA_y.crossVectors(FA_camDir, FA_x).normalize();
+  FA_x.crossVectors(FA_y, FA_camDir).normalize(); // re-orthogonalize
+
+  FA_mat.makeBasis(FA_x, FA_y, FA_camDir);
+  outQuat.setFromRotationMatrix(FA_mat);
 }
 
 /* ---------------- 2D convex hull (Andrew's monotone chain) — used to silhouette the
@@ -292,6 +363,7 @@ function mount(target, options){
 
   var cfg = {global:{}, field:{}, school:{}, growth:{}};
   GLOBAL_PARAMS.forEach(function(p){ cfg.global[p.key] = p.def; });
+  cfg.global.arrowStyle = 'cone';
   Object.keys(MODES).forEach(function(m){
     MODES[m].params.forEach(function(p){ cfg[m][p.key] = p.def; });
   });
@@ -343,11 +415,40 @@ function mount(target, options){
     globalLabel.textContent = 'GLOBAL';
     globalLabel.style.cssText = 'font-weight:700;letter-spacing:0.5px;margin-bottom:8px;';
     panelEl.appendChild(globalLabel);
+
+    var styleRow = document.createElement('div');
+    styleRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:9px;';
+    var styleLabel = document.createElement('span');
+    styleLabel.textContent = 'ARROW STYLE';
+    styleLabel.style.cssText = 'flex:0 0 auto;color:#3a3a38;letter-spacing:0.3px;';
+    var styleSelect = document.createElement('select');
+    styleSelect.style.cssText = 'flex:1 1 auto;height:24px;border:1px solid #1c1c1c;background:#fff;'+
+      'color:#141414;font-family:'+FONT_STACK+';font-size:11px;min-width:0;';
+    ARROW_STYLES.forEach(function(s){
+      var opt = document.createElement('option');
+      opt.value = s.key; opt.textContent = s.label;
+      styleSelect.appendChild(opt);
+    });
+    styleSelect.value = cfg.global.arrowStyle;
+    styleSelect.addEventListener('change', function(){
+      cfg.global.arrowStyle = styleSelect.value;
+      updateLineThicknessVisibility();
+    });
+    styleRow.appendChild(styleLabel); styleRow.appendChild(styleSelect);
+    panelEl.appendChild(styleRow);
+
     var globalParamsEl = document.createElement('div');
     panelEl.appendChild(globalParamsEl);
+    var lineThicknessRowEl = null;
     GLOBAL_PARAMS.forEach(function(p){
-      globalParamsEl.appendChild(makeRow(p, function(){return cfg.global[p.key];}, function(v){cfg.global[p.key]=v;}));
+      var row = makeRow(p, function(){return cfg.global[p.key];}, function(v){cfg.global[p.key]=v;});
+      globalParamsEl.appendChild(row);
+      if(p.key === 'lineThickness') lineThicknessRowEl = row;
     });
+    function updateLineThicknessVisibility(){
+      if(lineThicknessRowEl) lineThicknessRowEl.style.display = (cfg.global.arrowStyle === 'flat') ? 'none' : 'flex';
+    }
+    updateLineThicknessVisibility();
 
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;margin:8px 0 14px;';
@@ -467,8 +568,17 @@ function mount(target, options){
   resizeObs.observe(container);
   resize();
 
-  var baseMesh = new THREE.InstancedMesh(sharedArrowGeo, sharedBaseMat, MAX_INSTANCES);
-  var accentMesh = new THREE.InstancedMesh(sharedArrowGeo, sharedAccentMat, MAX_INSTANCES);
+  var currentArrowStyle = null;
+  var baseMesh = new THREE.InstancedMesh(sharedArrowGeoByStyle[cfg.global.arrowStyle], sharedBaseMat, MAX_INSTANCES);
+  var accentMesh = new THREE.InstancedMesh(sharedArrowGeoByStyle[cfg.global.arrowStyle], sharedAccentMat, MAX_INSTANCES);
+  currentArrowStyle = cfg.global.arrowStyle;
+  function syncArrowStyleGeometry(){
+    if(cfg.global.arrowStyle === currentArrowStyle) return;
+    currentArrowStyle = cfg.global.arrowStyle;
+    var geo = sharedArrowGeoByStyle[currentArrowStyle];
+    baseMesh.geometry = geo;
+    accentMesh.geometry = geo;
+  }
   baseMesh.count = 0; accentMesh.count = 0;
   scene.add(baseMesh, accentMesh);
 
@@ -734,16 +844,20 @@ function mount(target, options){
   var frameArrows = [];
   function assignInstances(list, getPDL){
     frameArrows.length = 0;
+    syncArrowStyleGeometry();
+    var isFlat = cfg.global.arrowStyle === 'flat';
     var bi=0, ai=0;
     var accentR2 = cfg.global.accentRadius*cfg.global.accentRadius;
+    var widthScale = isFlat ? cfg.global.arrowScale : cfg.global.arrowScale*cfg.global.lineThickness;
     for(var i=0;i<list.length;i++){
       var pdl = getPDL(list[i]);
       if(!pdl) continue;
       var pos=pdl.pos, dir=pdl.dir, len=pdl.len*cfg.global.arrowScale;
       if(dir.lengthSq()<1e-8) dir = X_AXIS;
       var isAccent = interactionActive && pos.distanceToSquared(interactionPoint) < accentR2;
-      tmpQuat.setFromUnitVectors(X_AXIS, dir);
-      tmpScale.set(len, cfg.global.arrowScale*cfg.global.lineThickness, cfg.global.arrowScale*cfg.global.lineThickness);
+      if(isFlat){ computeFlatOrientation(pos, dir, camera.position, tmpQuat); }
+      else { tmpQuat.setFromUnitVectors(X_AXIS, dir); }
+      tmpScale.set(len, widthScale, widthScale);
       tmpMat.compose(pos, tmpQuat, tmpScale);
       if(isAccent){ if(ai<MAX_INSTANCES){ accentMesh.setMatrixAt(ai++, tmpMat); } }
       else { if(bi<MAX_INSTANCES){ baseMesh.setMatrixAt(bi++, tmpMat); } }
@@ -824,14 +938,18 @@ function mount(target, options){
     btnSvg.addEventListener('click', function(){
       var w = renderer.domElement.width, h = renderer.domElement.height;
       var baseParts=[], accentParts=[];
+      var isFlat = cfg.global.arrowStyle === 'flat';
+      var widthScale = isFlat ? cfg.global.arrowScale : cfg.global.arrowScale*cfg.global.lineThickness;
+      var localPoints = ARROW_LOCAL_POINTS_BY_STYLE[cfg.global.arrowStyle];
       for(var i=0;i<frameArrows.length;i++){
         var a = frameArrows[i];
-        tmpQuat.setFromUnitVectors(X_AXIS, a.dir);
-        tmpScale.set(a.len, cfg.global.arrowScale*cfg.global.lineThickness, cfg.global.arrowScale*cfg.global.lineThickness);
+        if(isFlat){ computeFlatOrientation(a.pos, a.dir, camera.position, tmpQuat); }
+        else { tmpQuat.setFromUnitVectors(X_AXIS, a.dir); }
+        tmpScale.set(a.len, widthScale, widthScale);
         tmpMat.compose(a.pos, tmpQuat, tmpScale);
         var pts2d=[];
-        for(var k=0;k<ARROW_LOCAL_POINTS.length;k++){
-          var wp = ARROW_LOCAL_POINTS[k].clone().applyMatrix4(tmpMat);
+        for(var k=0;k<localPoints.length;k++){
+          var wp = localPoints[k].clone().applyMatrix4(tmpMat);
           var proj = wp.clone().project(camera);
           var x=(proj.x*0.5+0.5)*w, y=(1-(proj.y*0.5+0.5))*h;
           pts2d.push([x,y]);
@@ -852,6 +970,7 @@ function mount(target, options){
       var overridesObj = {global:{}};
       overridesObj.global = {};
       GLOBAL_PARAMS.forEach(function(p){ overridesObj.global[p.key] = cfg.global[p.key]; });
+      overridesObj.global.arrowStyle = cfg.global.arrowStyle;
       overridesObj[state.mode] = {};
       MODES[state.mode].params.forEach(function(p){ overridesObj[state.mode][p.key] = cfg[state.mode][p.key]; });
 
