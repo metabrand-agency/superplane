@@ -480,6 +480,9 @@ function mount(target, options){
   var panelEl = null, modeParamsEl = null, modeSectionLabel = null, readoutEl = null, tabsEls = {};
   var camCoordsEl = null;
   var cameraLocked = options.cameraLocked === true;
+  var flatMode = options.flatMode === true;
+  var FLAT_Z_SQUASH = 0.04; // how much world-space depth remains when FLAT is checked
+  var renderPosScratch = new THREE.Vector3();
   if(showPanel){
     panelEl = document.createElement('div');
     panelEl.style.cssText = 'width:280px;min-width:280px;height:100%;overflow-y:auto;background:#ececea;border-right:1px solid #1c1c1c;padding:14px;box-sizing:border-box;';
@@ -592,6 +595,18 @@ function mount(target, options){
     lockCheckbox.addEventListener('change', function(){ cameraLocked = lockCheckbox.checked; });
     lockRow.appendChild(lockCheckbox); lockRow.appendChild(lockLabelText);
     panelEl.appendChild(lockRow);
+
+    var flatRow = document.createElement('label');
+    flatRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;user-select:none;color:#141414;';
+    var flatCheckbox = document.createElement('input');
+    flatCheckbox.type = 'checkbox';
+    flatCheckbox.style.cssText = 'width:14px;height:14px;accent-color:#141414;cursor:pointer;flex:0 0 auto;';
+    var flatLabelText = document.createElement('span');
+    flatLabelText.textContent = 'FLAT (SQUASH DEPTH)';
+    flatCheckbox.checked = flatMode;
+    flatCheckbox.addEventListener('change', function(){ flatMode = flatCheckbox.checked; });
+    flatRow.appendChild(flatCheckbox); flatRow.appendChild(flatLabelText);
+    panelEl.appendChild(flatRow);
 
     camCoordsEl = document.createElement('div');
     camCoordsEl.style.cssText = 'margin-bottom:14px;line-height:1.6;color:#3a3a38;';
@@ -1043,7 +1058,10 @@ function mount(target, options){
     for(var i=0;i<list.length;i++){
       var pdl = getPDL(list[i]);
       if(!pdl) continue;
-      var pos=pdl.pos, dir=pdl.dir, len=pdl.len*cfg.global.arrowScale;
+      var dir=pdl.dir, len=pdl.len*cfg.global.arrowScale;
+      renderPosScratch.copy(pdl.pos);
+      if(flatMode) renderPosScratch.z *= FLAT_Z_SQUASH;
+      var pos = renderPosScratch;
       if(dir.lengthSq()<1e-8) dir = X_AXIS;
       var isAccent = interactionActive && pos.distanceToSquared(interactionPoint) < accentR2;
       if(isFlat){ computeFlatOrientation(pos, dir, camera.position, tmpQuat); }
@@ -1063,6 +1081,10 @@ function mount(target, options){
     if(state.mode==='field'){
       poleGroup.visible = true;
       hideNetworkVisuals();
+      for(var pgi=0; pgi<poleGroup.children.length; pgi++){
+        var poleWorldZ = poles[pgi] ? poles[pgi].z : 0;
+        poleGroup.children[pgi].position.z = flatMode ? poleWorldZ*FLAT_Z_SQUASH : poleWorldZ;
+      }
       assignInstances(fieldParticles, function(p){
         var d = p.vel.lengthSq()>1e-6 ? p.vel.clone().normalize() : X_AXIS;
         return {pos:p.pos, dir:d, len:FIELD_LEN};
@@ -1102,6 +1124,7 @@ function mount(target, options){
   }
   var netTmpQuat = new THREE.Quaternion(), netTmpScale = new THREE.Vector3();
   var netTmpMat = new THREE.Matrix4(), netTmpMid = new THREE.Vector3(), netTmpPerp = new THREE.Vector3();
+  var netRenderPosA = new THREE.Vector3(), netRenderPosB = new THREE.Vector3();
   function renderNetworkFrame(time){
     ensureEdgeLinePool(networkEdges.length);
     var accentR2 = cfg.global.accentRadius*cfg.global.accentRadius;
@@ -1109,10 +1132,12 @@ function mount(target, options){
     var ni=0, ai=0;
     for(var i=0;i<networkNodes.length;i++){
       var node = networkNodes[i];
-      var isAccent = interactionActive && node.pos.distanceToSquared(interactionPoint) < accentR2;
-      computeSpriteOrientation(node.pos, camera.position, netTmpQuat);
+      renderPosScratch.copy(node.pos);
+      if(flatMode) renderPosScratch.z *= FLAT_Z_SQUASH;
+      var isAccent = interactionActive && renderPosScratch.distanceToSquared(interactionPoint) < accentR2;
+      computeSpriteOrientation(renderPosScratch, camera.position, netTmpQuat);
       netTmpScale.set(node.w*nodeSize, node.h*nodeSize, 1);
-      netTmpMat.compose(node.pos, netTmpQuat, netTmpScale);
+      netTmpMat.compose(renderPosScratch, netTmpQuat, netTmpScale);
       if(isAccent){ if(ai<MAX_NETWORK_NODES) nodeAccentMesh.setMatrixAt(ai++, netTmpMat); }
       else { if(ni<MAX_NETWORK_NODES) nodeMesh.setMatrixAt(ni++, netTmpMat); }
     }
@@ -1122,10 +1147,13 @@ function mount(target, options){
     for(var e=0;e<networkEdges.length;e++){
       var edge = networkEdges[e];
       var line = edgeLines[e];
-      var pa = networkNodes[edge.a] ? networkNodes[edge.a].pos : null;
-      var pb = networkNodes[edge.b] ? networkNodes[edge.b].pos : null;
-      if(!pa || !pb){ line.visible = false; continue; }
+      var rawA = networkNodes[edge.a] ? networkNodes[edge.a].pos : null;
+      var rawB = networkNodes[edge.b] ? networkNodes[edge.b].pos : null;
+      if(!rawA || !rawB){ line.visible = false; continue; }
       line.visible = true;
+      netRenderPosA.copy(rawA); netRenderPosB.copy(rawB);
+      if(flatMode){ netRenderPosA.z *= FLAT_Z_SQUASH; netRenderPosB.z *= FLAT_Z_SQUASH; }
+      var pa = netRenderPosA, pb = netRenderPosB;
       netTmpMid.addVectors(pa, pb).multiplyScalar(0.5);
       netTmpPerp.subVectors(pb, pa);
       var segLen = netTmpPerp.length();
@@ -1235,7 +1263,7 @@ function mount(target, options){
       var idSlug = 'sp-embed-' + state.mode;
       var mountOptions = {mode: state.mode, panel: false, overrides: overridesObj,
         camera: {theta: orbit.theta, phi: orbit.phi, radius: orbit.radius},
-        cameraLocked: cameraLocked};
+        cameraLocked: cameraLocked, flatMode: flatMode};
       var snippet =
         '<!-- SuperPlane generative art \u2014 fills 100% of this block\'s width/height.\n' +
         '     Set the width/height on the wrapping element on your page. -->\n' +
