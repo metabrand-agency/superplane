@@ -415,6 +415,15 @@ function mount(target, options){
   canvas.style.cssText = 'display:block;width:100%;height:100%;';
   canvasWrap.appendChild(canvas);
 
+  var camHud = null;
+  if(showPanel){
+    camHud = document.createElement('div');
+    camHud.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(11,11,12,0.6);'+
+      'color:#d8d6d0;font-family:'+FONT_STACK+';font-size:10px;line-height:1.6;padding:6px 9px;'+
+      'border:1px solid #2a2a28;pointer-events:none;white-space:nowrap;';
+    canvasWrap.appendChild(camHud);
+  }
+
   /* ======================================================================
      THREE SETUP (scoped to this instance)
   ====================================================================== */
@@ -425,6 +434,11 @@ function mount(target, options){
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
   var orbit = {radius:8, theta:0.6, phi:1.2};
+  if(options.camera){
+    if(typeof options.camera.theta === 'number') orbit.theta = options.camera.theta;
+    if(typeof options.camera.phi === 'number') orbit.phi = options.camera.phi;
+    if(typeof options.camera.radius === 'number') orbit.radius = options.camera.radius;
+  }
   function applyOrbit(){
     camera.position.x = orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta);
     camera.position.y = orbit.radius * Math.cos(orbit.phi);
@@ -833,7 +847,8 @@ function mount(target, options){
       MODES[state.mode].params.forEach(function(p){ overridesObj[state.mode][p.key] = cfg[state.mode][p.key]; });
 
       var idSlug = 'sp-embed-' + state.mode;
-      var mountOptions = {mode: state.mode, panel: false, overrides: overridesObj};
+      var mountOptions = {mode: state.mode, panel: false, overrides: overridesObj,
+        camera: {theta: orbit.theta, phi: orbit.phi, radius: orbit.radius}};
       var snippet =
         '<!-- SuperPlane generative art \u2014 fills 100% of this block\'s width/height.\n' +
         '     Set the width/height on the wrapping element on your page. -->\n' +
@@ -873,6 +888,11 @@ function mount(target, options){
       var activeCount = state.mode==='field' ? fieldParticles.length :
                          state.mode==='school' ? agents.length : segments.length;
       readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
+    }
+    if(camHud){
+      var thetaDeg = ((orbit.theta*180/Math.PI) % 360 + 360) % 360;
+      var phiDeg = orbit.phi*180/Math.PI;
+      camHud.innerHTML = 'THETA &nbsp;: '+thetaDeg.toFixed(1)+'&deg;<br>PHI &nbsp;&nbsp;&nbsp;: '+phiDeg.toFixed(1)+'&deg;<br>RADIUS: '+orbit.radius.toFixed(2);
     }
   }
   animate();
