@@ -120,8 +120,8 @@ var RADIAL_SEGMENTS = 7;  // low-poly, keeps triangle count small across many in
 
 // 'flat' style proportions, from the arrow2.svg reference (thin hairline shaft, wide flat head)
 var FLAT_SHAFT_HALF_W = 0.005;
-var FLAT_HEAD_HALF_W  = 0.018;
-var FLAT_HEAD_LEN     = 0.12;
+var FLAT_HEAD_HALF_W  = 0.0507;
+var FLAT_HEAD_LEN     = 0.4824;
 
 // 'chevron' style: thin leg + a head made of two line strokes (a "<" angle) at the
 // SAME thickness as the leg, instead of a filled triangle.
