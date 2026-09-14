@@ -907,6 +907,27 @@ function mount(target, options){
     fieldSepResult.x = fx*FIELD_SEP_STRENGTH; fieldSepResult.y = fy*FIELD_SEP_STRENGTH;
     return fieldSepResult;
   }
+  // Multi-vortex flow fields don't naturally keep passive particles bounded — with
+  // several poles interacting, some particles will eventually drift arbitrarily far
+  // (this is the real dispersal behavior seen with several interacting vortices).
+  // A soft "leash" fixes it without fighting the natural flow at normal working
+  // distances: no pull at all until a particle drifts past CONTAINMENT_RADIUS from
+  // its nearest pole, then an increasingly firm pull back toward that pole.
+  var FIELD_CONTAINMENT_RADIUS = 4.0, FIELD_CONTAINMENT_K = 0.9;
+  function fieldContainmentAt(pos){
+    var nearest = null, nearestD2 = Infinity;
+    for(var i=0;i<poles.length;i++){
+      var d2 = pos.distanceToSquared(poles[i]);
+      if(d2<nearestD2){ nearestD2=d2; nearest=poles[i]; }
+    }
+    if(!nearest) return null;
+    var d = Math.sqrt(nearestD2);
+    if(d <= FIELD_CONTAINMENT_RADIUS) return null;
+    var excess = d - FIELD_CONTAINMENT_RADIUS;
+    var pull = Math.min(excess*excess*FIELD_CONTAINMENT_K, 6.0); // capped so it never overreacts violently
+    tmpRel.subVectors(nearest, pos).normalize().multiplyScalar(pull);
+    return tmpRel;
+  }
   function updateField(dt, time){
     rebuildFieldGrid();
     for(var i=0;i<fieldParticles.length;i++){
@@ -914,9 +935,11 @@ function mount(target, options){
       var f = fieldVectorAt(pt.pos);
       pt.vel.lerp(f, 0.15);
       var sep = fieldSeparationAt(i);
+      var leash = fieldContainmentAt(pt.pos);
       pt.pos.addScaledVector(pt.vel, dt*cfg.field.speed);
       pt.pos.x += sep.x*dt;
       pt.pos.y += sep.y*dt;
+      if(leash) pt.pos.addScaledVector(leash, dt);
       pt.pos.z += Math.sin(time*0.5+pt.seed)*0.01;
     }
   }
