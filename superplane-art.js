@@ -810,7 +810,16 @@ function mount(target, options){
     orbit.radius = Math.min(20, Math.max(3, orbit.radius*(1+e.deltaY*0.001)));
   }, {passive:false});
 
-  /* ---------------- FIELD MODE ---------------- */
+  /* ---------------- FIELD MODE ----------------
+     Each particle is anchored to one pole and one target orbit radius, assigned once
+     at init on an evenly-spaced polar grid (rings x evenly-spaced angles) — this is
+     what keeps the four poles visually distinct from the very first frame, and what
+     keeps arrows from crowding into a jumble (everyone on the same ring shares the
+     same angular speed, so their spacing never collapses). A radial spring constantly
+     pulls each particle back toward its assigned ring radius, so the classic circular
+     field-line look never dissolves into an expanding blob over time, and any mouse
+     interaction is a temporary detour — releasing the cursor always lets the spring
+     settle particles back to their original rings. */
   var fieldParticles = [], poles = [];
   function computePoles(){
     var n = cfg.field.poles;
@@ -824,49 +833,82 @@ function mount(target, options){
       poleGroup.add(m);
     }
   }
+  var FIELD_RINGS = 6, FIELD_RING_MIN_R = 0.55, FIELD_RING_MAX_R = 3.2;
   function initField(){
     computePoles();
-    var n = cfg.field.count;
+    var nPoles = poles.length;
+    var perPole = Math.max(1, Math.ceil(cfg.field.count / nPoles));
+    var perRing = Math.max(3, Math.round(perPole / FIELD_RINGS));
     fieldParticles = [];
-    for(var i=0;i<n;i++){
-      var pole = poles[Math.floor(Math.random()*poles.length)] || new THREE.Vector3();
-      var ang = Math.random()*Math.PI*2;
-      var r = 0.6 + Math.random()*3.2;
-      fieldParticles.push({
-        pos: new THREE.Vector3(pole.x+Math.cos(ang)*r, pole.y+Math.sin(ang)*r, (Math.random()-0.5)*1.5),
-        vel: new THREE.Vector3(),
-        seed: Math.random()*1000
-      });
+    for(var p=0; p<nPoles; p++){
+      var pole = poles[p];
+      for(var r=0; r<FIELD_RINGS; r++){
+        var radius = FIELD_RING_MIN_R + (r/(FIELD_RINGS-1))*(FIELD_RING_MAX_R-FIELD_RING_MIN_R);
+        var angleOffset = (r%2) * (Math.PI/perRing); // stagger alternating rings, like the reference diagrams
+        for(var k=0; k<perRing; k++){
+          var ang = angleOffset + k*(Math.PI*2/perRing);
+          fieldParticles.push({
+            pos: new THREE.Vector3(
+              pole.x + Math.cos(ang)*radius,
+              pole.y + Math.sin(ang)*radius,
+              pole.z + (Math.random()-0.5)*0.25
+            ),
+            vel: new THREE.Vector3(),
+            poleIndex: p,
+            targetRadius: radius,
+            seed: Math.random()*1000
+          });
+        }
+      }
     }
   }
-  var tmpRel=new THREE.Vector3(), tmpTan=new THREE.Vector3(), tmpFieldV=new THREE.Vector3();
-  function fieldVectorAt(pos){
-    tmpFieldV.set(0,0,0);
-    for(var i=0;i<poles.length;i++){
-      tmpRel.subVectors(pos, poles[i]);
-      var d2 = Math.max(tmpRel.lengthSq(), 0.05);
-      tmpTan.set(-tmpRel.y, tmpRel.x, 0);
-      if(tmpTan.lengthSq()>1e-8) tmpTan.normalize();
-      tmpTan.multiplyScalar(cfg.field.strength*3.0/Math.sqrt(d2));
-      tmpFieldV.add(tmpTan);
-    }
-    if(interactionActive && cfg.field.cursorPull>0){
-      tmpRel.subVectors(pos, interactionPoint);
-      var d2c = Math.max(tmpRel.lengthSq(), 0.05);
-      tmpTan.set(-tmpRel.y, tmpRel.x, 0);
-      if(tmpTan.lengthSq()>1e-8) tmpTan.normalize();
-      tmpTan.multiplyScalar(cfg.field.cursorPull*3.0/Math.sqrt(d2c));
-      tmpFieldV.add(tmpTan);
-    }
-    return tmpFieldV;
-  }
+  var tmpRel=new THREE.Vector3(), tmpTan=new THREE.Vector3(), tmpRadial=new THREE.Vector3(), tmpSpring=new THREE.Vector3(), tmpOther=new THREE.Vector3(), tmpCursor=new THREE.Vector3();
   function updateField(dt, time){
+    var c = cfg.field;
     for(var i=0;i<fieldParticles.length;i++){
       var pt = fieldParticles[i];
-      var f = fieldVectorAt(pt.pos);
-      pt.vel.lerp(f, 0.15);
-      pt.pos.addScaledVector(pt.vel, dt*cfg.field.speed);
-      pt.pos.z += Math.sin(time*0.5+pt.seed)*0.01;
+      var pole = poles[pt.poleIndex];
+      if(!pole) continue;
+      tmpRel.subVectors(pt.pos, pole);
+      var radius = Math.max(tmpRel.length(), 0.05);
+      tmpRadial.copy(tmpRel).divideScalar(radius); // unit radial direction
+      tmpTan.set(-tmpRadial.y, tmpRadial.x, 0); // primary rotation around the anchor pole
+
+      // radial spring: constantly pulls back toward the assigned ring radius, so
+      // orbits never expand outward and always recover after being disturbed.
+      var radialError = radius - pt.targetRadius;
+      tmpSpring.copy(tmpRadial).multiplyScalar(-radialError*2.2);
+
+      // other poles add only a light secondary influence, so each pole's rings stay
+      // visually distinct instead of blending into one chaotic combined field.
+      tmpOther.set(0,0,0);
+      for(var j=0;j<poles.length;j++){
+        if(j===pt.poleIndex) continue;
+        var rel2x=pt.pos.x-poles[j].x, rel2y=pt.pos.y-poles[j].y, rel2z=pt.pos.z-poles[j].z;
+        var d2 = Math.max(rel2x*rel2x+rel2y*rel2y+rel2z*rel2z, 0.15);
+        var tl = Math.sqrt(rel2x*rel2x+rel2y*rel2y) || 1;
+        tmpOther.x += (-rel2y/tl) * (c.strength*0.12/Math.sqrt(d2));
+        tmpOther.y += ( rel2x/tl) * (c.strength*0.12/Math.sqrt(d2));
+      }
+
+      tmpCursor.set(0,0,0);
+      if(interactionActive && c.cursorPull>0){
+        var rcx=pt.pos.x-interactionPoint.x, rcy=pt.pos.y-interactionPoint.y;
+        var dC = Math.max(rcx*rcx+rcy*rcy, 0.05);
+        var rl = Math.sqrt(dC);
+        tmpCursor.x = (-rcy/rl) * (c.cursorPull*2.0/rl);
+        tmpCursor.y = ( rcx/rl) * (c.cursorPull*2.0/rl);
+      }
+
+      var desiredSpeed = c.strength*c.speed;
+      pt.vel.x += (tmpTan.x*desiredSpeed - pt.vel.x)*0.10;
+      pt.vel.y += (tmpTan.y*desiredSpeed - pt.vel.y)*0.10;
+      pt.vel.z += (tmpTan.z*desiredSpeed - pt.vel.z)*0.10;
+      pt.vel.addScaledVector(tmpSpring, dt);
+      pt.vel.addScaledVector(tmpOther, dt);
+      pt.vel.addScaledVector(tmpCursor, dt);
+      pt.pos.addScaledVector(pt.vel, dt);
+      pt.pos.z += Math.sin(time*0.4 + pt.seed)*0.002;
     }
   }
 
