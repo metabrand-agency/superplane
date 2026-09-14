@@ -119,9 +119,9 @@ var SHAFT_RADIUS = 0.055; // local shaft radius (this is what LINE THICKNESS sca
 var RADIAL_SEGMENTS = 7;  // low-poly, keeps triangle count small across many instances
 
 // 'flat' style proportions, from the arrow2.svg reference (thin hairline shaft, wide flat head)
-var FLAT_SHAFT_HALF_W = 0.015;
-var FLAT_HEAD_HALF_W  = 0.076;
-var FLAT_HEAD_LEN     = 0.19;
+var FLAT_SHAFT_HALF_W = 0.020;
+var FLAT_HEAD_HALF_W  = 0.0686;
+var FLAT_HEAD_LEN     = 0.2373;
 
 // 'chevron' style: thin leg + a head made of two line strokes (a "<" angle) at the
 // SAME thickness as the leg, instead of a filled triangle.
