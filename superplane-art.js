@@ -75,6 +75,20 @@ var MODES = {
       {key:'cursorPull',   label:'CURSOR PULL',  min:0,  max:3,  step:0.05,def:1.5},
       {key:'nodeSize',     label:'NODE SIZE',    min:0.1,max:2.5,step:0.05,def:0.33}
     ]
+  },
+  globe: {
+    label: 'GLOBE PARAMS',
+    params: [
+      {key:'count',       label:'ARROWS',       min:100,max:1000,step:20, def:500},
+      {key:'poles',       label:'POLE COUNT',   min:2,  max:6,   step:1,  def:4},
+      {key:'strength',    label:'POLE STRENGTH',min:0.2,max:3,   step:0.05,def:1.0},
+      {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.6},
+      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:0.8},
+      {key:'spin',        label:'PLANET SPIN',  min:0,  max:2,   step:0.05,def:0.3},
+      {key:'sphereSize',  label:'SPHERE SIZE',  min:2,  max:10,  step:0.1, def:6},
+      {key:'horizon',     label:'HORIZON',      min:0.3,max:1.0, step:0.02,def:0.72},
+      {key:'cursorPull',  label:'CURSOR PULL',  min:0,  max:3,   step:0.05,def:1.2}
+    ]
   }
 };
 var GLOBAL_PARAMS = [
@@ -458,7 +472,7 @@ function mount(target, options){
   var showPanel = !!options.panel;
   var allowModeSwitch = options.allowModeSwitch !== false;
 
-  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}};
+  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}, globe:{}};
   GLOBAL_PARAMS.forEach(function(p){ cfg.global[p.key] = p.def; });
   cfg.global.arrowStyle = 'cone';
   Object.keys(MODES).forEach(function(m){
@@ -490,13 +504,14 @@ function mount(target, options){
 
     if(allowModeSwitch){
       var tabsRow = document.createElement('div');
-      tabsRow.style.cssText = 'display:flex;flex-wrap:wrap;border:1px solid #1c1c1c;margin-bottom:14px;';
-      var MODE_KEYS = ['field','school','growth','network'];
+      tabsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3, 1fr);border:1px solid #1c1c1c;border-right:none;border-bottom:none;margin-bottom:14px;';
+      var MODE_KEYS = ['field','school','growth','network','globe'];
       MODE_KEYS.forEach(function(m, i){
         var t = document.createElement('div');
         t.textContent = m.toUpperCase();
-        t.style.cssText = 'flex:1 1 25%;text-align:center;padding:7px 0;cursor:pointer;user-select:none;'+
-          (i<MODE_KEYS.length-1?'border-right:1px solid #1c1c1c;':'')+'background:'+(m===state.mode?'#141414':'#ececea')+';color:'+(m===state.mode?'#ececea':'#141414')+';';
+        t.style.cssText = 'text-align:center;padding:7px 0;cursor:pointer;user-select:none;'+
+          'border-right:1px solid #1c1c1c;border-bottom:1px solid #1c1c1c;'+
+          'background:'+(m===state.mode?'#141414':'#ececea')+';color:'+(m===state.mode?'#ececea':'#141414')+';';
         t.addEventListener('click', function(){
           state.mode = m;
           Object.keys(tabsEls).forEach(function(k){
@@ -734,6 +749,16 @@ function mount(target, options){
       edgeLines.push(line);
     }
   }
+
+  /* ---------------- GLOBE mode visuals: the planet + its lat/long grid ---------------- */
+  var globeSphereGeo = new THREE.SphereGeometry(1, 32, 24);
+  var globeSolidMat = new THREE.MeshBasicMaterial({color:0x161613});
+  var globeGridMat = new THREE.MeshBasicMaterial({color:0x3c3c38, wireframe:true, transparent:true, opacity:0.5});
+  var globeSolidMesh = new THREE.Mesh(globeSphereGeo, globeSolidMat);
+  var globeGridMesh = new THREE.Mesh(globeSphereGeo, globeGridMat);
+  globeGridMesh.scale.setScalar(1.003);
+  globeSolidMesh.visible = false; globeGridMesh.visible = false;
+  scene.add(globeSolidMesh, globeGridMesh);
 
   /* ---------------- interaction ---------------- */
   var raycaster = new THREE.Raycaster();
@@ -1045,6 +1070,96 @@ function mount(target, options){
   }
   function resetNetwork(){ initNetwork(); }
 
+  /* ---------------- GLOBE MODE ----------------
+     Arrows constrained to the surface of a sphere, driven by several tangential
+     "vortex" fields (the same cross-product trick as FIELD mode, but computed on the
+     sphere so the flow always stays on the surface) plus a slow rigid spin of the
+     whole field pattern and a little per-particle turbulence, for a
+     magnetic-field-lines-on-a-slowly-turning-planet feel. */
+  var globeParticles = [], globePoles = [];
+  var GLOBE_SPIN_AXIS = new THREE.Vector3(0.15, 1, 0).normalize();
+  function globeSphereCenter(out){
+    var c = cfg.globe;
+    out.set(0, -c.sphereSize*c.horizon, 0);
+    return out;
+  }
+  function randomCapDirection(halfAngleDeg){
+    var halfAngleRad = halfAngleDeg*Math.PI/180;
+    var cosT = 1 - Math.random()*(1-Math.cos(halfAngleRad));
+    var theta = Math.acos(cosT);
+    var phi = Math.random()*Math.PI*2;
+    return new THREE.Vector3(Math.sin(theta)*Math.cos(phi), cosT, Math.sin(theta)*Math.sin(phi));
+  }
+  function initGlobe(){
+    var c = cfg.globe;
+    globePoles = [];
+    for(var i=0;i<c.poles;i++){
+      globePoles.push({dir: randomCapDirection(80), sign: Math.random()<0.5?-1:1});
+    }
+    var center = globeSphereCenter(new THREE.Vector3());
+    globeParticles = [];
+    for(var j=0;j<c.count;j++){
+      var dir = randomCapDirection(78);
+      globeParticles.push({
+        pos: center.clone().addScaledVector(dir, c.sphereSize),
+        vel: new THREE.Vector3(),
+        seed: Math.random()*1000,
+        axisSeed: new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).normalize()
+      });
+    }
+  }
+  function resetGlobe(){ initGlobe(); }
+  var gTmpRel=new THREE.Vector3(), gTmpTan=new THREE.Vector3(), gTmpField=new THREE.Vector3(), gTmpCenter=new THREE.Vector3();
+  function globeFieldAt(dirOnSphere, particle, c){
+    gTmpField.set(0,0,0);
+    for(var i=0;i<globePoles.length;i++){
+      var pole = globePoles[i];
+      var angDist = Math.max(1 - dirOnSphere.dot(pole.dir), 0.02); // 0 at pole, up to 2 at antipode
+      gTmpTan.crossVectors(pole.dir, dirOnSphere); // automatically tangent to sphere at dirOnSphere
+      if(gTmpTan.lengthSq()>1e-8) gTmpTan.normalize();
+      gTmpTan.multiplyScalar(pole.sign*c.strength*0.6/angDist);
+      gTmpField.add(gTmpTan);
+    }
+    if(c.turbulence>0){
+      gTmpTan.crossVectors(particle.axisSeed, dirOnSphere);
+      if(gTmpTan.lengthSq()>1e-8) gTmpTan.normalize();
+      gTmpTan.multiplyScalar(Math.sin(globeClock*0.4 + particle.seed)*c.turbulence*0.35);
+      gTmpField.add(gTmpTan);
+    }
+    return gTmpField;
+  }
+  var globeClock = 0;
+  function updateGlobe(dt, time){
+    globeClock = time;
+    var c = cfg.globe;
+    globeSphereCenter(gTmpCenter);
+    // slowly spin the whole pole configuration, like weather patterns riding a turning planet
+    var spinAngle = c.spin*0.15*dt;
+    if(spinAngle !== 0){
+      for(var p=0;p<globePoles.length;p++) globePoles[p].dir.applyAxisAngle(GLOBE_SPIN_AXIS, spinAngle);
+    }
+    for(var i=0;i<globeParticles.length;i++){
+      var particle = globeParticles[i];
+      gTmpRel.subVectors(particle.pos, gTmpCenter);
+      var dirOnSphere = gTmpRel.normalize();
+      var field = globeFieldAt(dirOnSphere, particle, c);
+      if(interactionActive && c.cursorPull>0){
+        var cursorRel = new THREE.Vector3().subVectors(interactionPoint, gTmpCenter);
+        if(cursorRel.lengthSq()>1e-6){
+          var cursorDir = cursorRel.normalize();
+          var ang = Math.max(1 - dirOnSphere.dot(cursorDir), 0.02);
+          var cTan = new THREE.Vector3().crossVectors(cursorDir, dirOnSphere);
+          if(cTan.lengthSq()>1e-8) cTan.normalize();
+          field.add(cTan.multiplyScalar(c.cursorPull*0.6/ang));
+        }
+      }
+      particle.vel.lerp(field, 0.15);
+      particle.vel.addScaledVector(dirOnSphere, -particle.vel.dot(dirOnSphere)); // keep tangent
+      dirOnSphere.addScaledVector(particle.vel, dt*c.speed*0.35).normalize();
+      particle.pos.copy(gTmpCenter).addScaledVector(dirOnSphere, c.sphereSize);
+    }
+  }
+
   /* ---------------- compose instances ---------------- */
   var X_AXIS=new THREE.Vector3(1,0,0), tmpQuat=new THREE.Quaternion(), tmpScale=new THREE.Vector3(), tmpMat=new THREE.Matrix4();
   var frameArrows = [];
@@ -1081,6 +1196,7 @@ function mount(target, options){
     if(state.mode==='field'){
       poleGroup.visible = false;
       hideNetworkVisuals();
+      hideGlobeVisuals();
       for(var pgi=0; pgi<poleGroup.children.length; pgi++){
         var poleWorldZ = poles[pgi] ? poles[pgi].z : 0;
         poleGroup.children[pgi].position.z = flatMode ? poleWorldZ*FLAT_Z_SQUASH : poleWorldZ;
@@ -1092,6 +1208,7 @@ function mount(target, options){
     } else if(state.mode==='school'){
       poleGroup.visible = false;
       hideNetworkVisuals();
+      hideGlobeVisuals();
       assignInstances(agents, function(a){
         var d = a.vel.lengthSq()>1e-6 ? a.vel.clone().normalize() : X_AXIS;
         return {pos:a.pos, dir:d, len:SCHOOL_LEN};
@@ -1099,6 +1216,7 @@ function mount(target, options){
     } else if(state.mode==='growth'){
       poleGroup.visible = false;
       hideNetworkVisuals();
+      hideGlobeVisuals();
       assignInstances(segments, function(s){
         // animate each segment growing outward from its own base point (like an
         // extending stick) instead of popping in at full length instantly.
@@ -1111,11 +1229,28 @@ function mount(target, options){
       });
     } else if(state.mode==='network'){
       poleGroup.visible = false;
+      hideGlobeVisuals();
       baseMesh.count = 0; accentMesh.count = 0;
       baseMesh.instanceMatrix.needsUpdate = true; accentMesh.instanceMatrix.needsUpdate = true;
       frameArrows.length = 0; // SVG export (arrow-silhouette based) has nothing to draw in this mode yet
       renderNetworkFrame(time);
+    } else if(state.mode==='globe'){
+      poleGroup.visible = false;
+      hideNetworkVisuals();
+      globeSolidMesh.visible = true; globeGridMesh.visible = true;
+      var gc = globeSphereCenter(new THREE.Vector3());
+      if(flatMode) gc.z *= FLAT_Z_SQUASH;
+      globeSolidMesh.position.copy(gc); globeGridMesh.position.copy(gc);
+      globeSolidMesh.scale.setScalar(cfg.globe.sphereSize);
+      globeGridMesh.scale.setScalar(cfg.globe.sphereSize*1.003);
+      assignInstances(globeParticles, function(p){
+        var d = p.vel.lengthSq()>1e-6 ? p.vel.clone().normalize() : X_AXIS;
+        return {pos:p.pos, dir:d, len:FIELD_LEN};
+      });
     }
+  }
+  function hideGlobeVisuals(){
+    globeSolidMesh.visible = false; globeGridMesh.visible = false;
   }
   function hideNetworkVisuals(){
     nodeMesh.count = 0; nodeAccentMesh.count = 0;
@@ -1185,8 +1320,9 @@ function mount(target, options){
     else if(state.mode==='school') initSchool();
     else if(state.mode==='growth') resetGrowth();
     else if(state.mode==='network') resetNetwork();
+    else if(state.mode==='globe') resetGlobe();
   }
-  initField(); initSchool(); initNetwork();
+  initField(); initSchool(); initNetwork(); initGlobe();
 
   /* ---------------- panel: mode params rebuild (needs functions above defined first) ---------------- */
   function rebuildModeParams(){
@@ -1292,6 +1428,7 @@ function mount(target, options){
     else if(state.mode==='school') updateSchool(dt);
     else if(state.mode==='growth') updateGrowth(dt, elapsed);
     else if(state.mode==='network') updateNetwork(dt, elapsed);
+    else if(state.mode==='globe') updateGlobe(dt, elapsed);
 
     composeForMode(elapsed);
 
@@ -1303,7 +1440,8 @@ function mount(target, options){
     if(showPanel && readoutEl){
       var activeCount = state.mode==='field' ? fieldParticles.length :
                          state.mode==='school' ? agents.length :
-                         state.mode==='network' ? networkNodes.length : segments.length;
+                         state.mode==='network' ? networkNodes.length :
+                         state.mode==='globe' ? globeParticles.length : segments.length;
       readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
     }
     if(camCoordsEl){
