@@ -92,7 +92,7 @@ var MODES = {
   }
 };
 var GLOBAL_PARAMS = [
-  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:1.45},
+  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:1.0},
   {key:'lineThickness',  label:'LINE THICKNESS', min:0.2,max:3.0,step:0.05,def:0.20},
   {key:'accentRadius',   label:'ACCENT RADIUS',  min:0,  max:8,  step:0.1, def:0.0}
 ];
@@ -122,7 +122,7 @@ var RADIAL_SEGMENTS = 7;  // low-poly, keeps triangle count small across many in
 var FLAT_SHAFT_HALF_W = 0.02;
 var FLAT_HEAD_HALF_W  = 0.05;
 var FLAT_HEAD_LEN     = 0.23;
-var FLAT_LEG_LEN      = 0.77; // leg length is independent of head size — shortening this never grows the head
+var FLAT_LEG_LEN      = 0.60; // leg length is independent of head size — shortening this never grows the head
 
 // 'chevron' style: thin leg + a head made of two line strokes (a "<" angle) at the
 // SAME thickness as the leg, instead of a filled triangle.
@@ -495,8 +495,8 @@ function mount(target, options){
 
   var panelEl = null, modeParamsEl = null, modeSectionLabel = null, readoutEl = null, tabsEls = {};
   var camCoordsEl = null;
-  var cameraLocked = options.cameraLocked === true;
-  var flatMode = options.flatMode === true;
+  var cameraLocked = options.cameraLocked !== false;
+  var flatMode = options.flatMode !== false;
   var FLAT_Z_SQUASH = 0.04; // how much world-space depth remains when FLAT is checked
   var renderPosScratch = new THREE.Vector3();
   if(showPanel){
