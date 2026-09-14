@@ -1171,11 +1171,16 @@ function mount(target, options){
     var isFlat = !!FLAT_STYLE_KEYS[cfg.global.arrowStyle];
     var bi=0, ai=0;
     var accentR2 = cfg.global.accentRadius*cfg.global.accentRadius;
-    var widthScale = isFlat ? cfg.global.arrowScale : cfg.global.arrowScale*cfg.global.lineThickness;
+    // FLAT/CHEVRON have no separate thickness control — their local width (sw/hw) is
+    // authored as a fraction of their own local length, so width must scale by the
+    // SAME factor as length (len) to keep the authored proportions exact. CONE keeps
+    // its own independent thickness control (arrowScale*lineThickness), unrelated to len.
+    var coneWidthScale = cfg.global.arrowScale*cfg.global.lineThickness;
     for(var i=0;i<list.length;i++){
       var pdl = getPDL(list[i]);
       if(!pdl) continue;
       var dir=pdl.dir, len=pdl.len*cfg.global.arrowScale;
+      var widthScale = isFlat ? len : coneWidthScale;
       renderPosScratch.copy(pdl.pos);
       if(flatMode) renderPosScratch.z *= FLAT_Z_SQUASH;
       var pos = renderPosScratch;
@@ -1363,10 +1368,11 @@ function mount(target, options){
       var w = renderer.domElement.width, h = renderer.domElement.height;
       var baseParts=[], accentParts=[];
       var isFlat = !!FLAT_STYLE_KEYS[cfg.global.arrowStyle];
-      var widthScale = isFlat ? cfg.global.arrowScale : cfg.global.arrowScale*cfg.global.lineThickness;
+      var coneWidthScale = cfg.global.arrowScale*cfg.global.lineThickness;
       var localPoints = ARROW_LOCAL_POINTS_BY_STYLE[cfg.global.arrowStyle];
       for(var i=0;i<frameArrows.length;i++){
         var a = frameArrows[i];
+        var widthScale = isFlat ? a.len : coneWidthScale;
         if(isFlat){ computeFlatOrientation(a.pos, a.dir, camera.position, tmpQuat); }
         else { tmpQuat.setFromUnitVectors(X_AXIS, a.dir); }
         tmpScale.set(a.len, widthScale, widthScale);
