@@ -122,6 +122,7 @@ var RADIAL_SEGMENTS = 7;  // low-poly, keeps triangle count small across many in
 var FLAT_SHAFT_HALF_W = 0.005;
 var FLAT_HEAD_HALF_W  = 0.02028;
 var FLAT_HEAD_LEN     = 0.19296;
+var FLAT_LEG_LEN      = 0.40352; // leg length is independent of head size — shortening this never grows the head
 
 // 'chevron' style: thin leg + a head made of two line strokes (a "<" angle) at the
 // SAME thickness as the leg, instead of a filled triangle.
@@ -194,14 +195,15 @@ function buildConeArrowGeometry(){
 
 function buildFlatArrowGeometry(){
   var sw = FLAT_SHAFT_HALF_W, hw = FLAT_HEAD_HALF_W, headStart = 0.5 - FLAT_HEAD_LEN;
+  var tailX = headStart - FLAT_LEG_LEN; // leg length is independent of head size
   var outline = [
-    new THREE.Vector3(-0.5,      sw, 0), // 0 tail-top
+    new THREE.Vector3(tailX,      sw, 0), // 0 tail-top
     new THREE.Vector3(headStart, sw, 0), // 1 shoulder-top-inner
     new THREE.Vector3(headStart, hw, 0), // 2 shoulder-top-outer
     new THREE.Vector3( 0.5,      0,  0), // 3 tip
     new THREE.Vector3(headStart,-hw, 0), // 4 shoulder-bottom-outer
     new THREE.Vector3(headStart,-sw, 0), // 5 shoulder-bottom-inner
-    new THREE.Vector3(-0.5,     -sw, 0)  // 6 tail-bottom
+    new THREE.Vector3(tailX,     -sw, 0)  // 6 tail-bottom
   ];
   // Correct decomposition of this concave (notched) polygon: the shaft is a plain
   // rectangle (tail corners + inner shoulder corners) and the head is one triangle
