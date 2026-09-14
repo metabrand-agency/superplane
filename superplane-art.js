@@ -34,8 +34,8 @@ var MODES = {
     label: 'FIELD PARAMS',
     params: [
       {key:'count',     label:'PARTICLES',     min:50,  max:800, step:10,  def:800},
-      {key:'poles',     label:'POLE COUNT',    min:1,   max:4,   step:1,   def:4},
-      {key:'strength',  label:'POLE STRENGTH', min:0.2, max:3,   step:0.05,def:0.7},
+      {key:'poles',     label:'POLE COUNT',    min:1,   max:4,   step:1,   def:2},
+      {key:'strength',  label:'POLE STRENGTH', min:0.2, max:3,   step:0.05,def:1.20},
       {key:'speed',     label:'FLOW SPEED',    min:0.1, max:3,   step:0.05,def:0.3},
       {key:'cursorPull',label:'CURSOR PULL',   min:0,   max:3,   step:0.05,def:3.0}
     ]
@@ -92,7 +92,7 @@ var MODES = {
   }
 };
 var GLOBAL_PARAMS = [
-  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:1.0},
+  {key:'arrowScale',     label:'ARROW SCALE',    min:0.3,max:2.5,step:0.05,def:0.85},
   {key:'lineThickness',  label:'LINE THICKNESS', min:0.2,max:3.0,step:0.05,def:0.20},
   {key:'accentRadius',   label:'ACCENT RADIUS',  min:0,  max:8,  step:0.1, def:0.0}
 ];
@@ -476,7 +476,7 @@ function mount(target, options){
 
   var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}, globe:{}};
   GLOBAL_PARAMS.forEach(function(p){ cfg.global[p.key] = p.def; });
-  cfg.global.arrowStyle = 'cone';
+  cfg.global.arrowStyle = 'flat';
   Object.keys(MODES).forEach(function(m){
     MODES[m].params.forEach(function(p){ cfg[m][p.key] = p.def; });
   });
