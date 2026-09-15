@@ -668,6 +668,12 @@ function mount(target, options){
     readoutEl = document.createElement('div');
     readoutEl.style.cssText = 'margin-top:4px;line-height:1.6;color:#3a3a38;';
     panelEl.appendChild(readoutEl);
+
+    var logoImg = document.createElement('img');
+    logoImg.src = 'https://cdn.prod.website-files.com/6aa50db8e89996c95ee03309/6aa9537dce3c2279451bebed_superplane.svg';
+    logoImg.alt = 'SuperPlane';
+    logoImg.style.cssText = 'display:block;height:20px;width:auto;margin-top:20px;opacity:0.85;';
+    panelEl.appendChild(logoImg);
   }
 
   var canvasWrap = document.createElement('div');
