@@ -505,6 +505,12 @@ function mount(target, options){
     panelEl.style.cssText = 'width:280px;min-width:280px;height:100%;overflow-y:auto;background:#ececea;border-right:1px solid #1c1c1c;padding:14px;box-sizing:border-box;';
     root.appendChild(panelEl);
 
+    var logoImg = document.createElement('img');
+    logoImg.src = 'https://cdn.prod.website-files.com/6aa50db8e89996c95ee03309/6aa9537dce3c2279451bebed_superplane.svg';
+    logoImg.alt = 'SuperPlane';
+    logoImg.style.cssText = 'display:block;height:20px;width:auto;margin-bottom:60px;opacity:0.85;';
+    panelEl.appendChild(logoImg);
+
     if(allowModeSwitch){
       var tabsRow = document.createElement('div');
       tabsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3, 1fr);border:1px solid #1c1c1c;border-right:none;border-bottom:none;margin-bottom:14px;';
@@ -668,12 +674,6 @@ function mount(target, options){
     readoutEl = document.createElement('div');
     readoutEl.style.cssText = 'margin-top:4px;line-height:1.6;color:#3a3a38;';
     panelEl.appendChild(readoutEl);
-
-    var logoImg = document.createElement('img');
-    logoImg.src = 'https://cdn.prod.website-files.com/6aa50db8e89996c95ee03309/6aa9537dce3c2279451bebed_superplane.svg';
-    logoImg.alt = 'SuperPlane';
-    logoImg.style.cssText = 'display:block;height:20px;width:auto;margin-top:20px;opacity:0.85;';
-    panelEl.appendChild(logoImg);
   }
 
   var canvasWrap = document.createElement('div');
