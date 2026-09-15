@@ -87,6 +87,7 @@ var MODES = {
       {key:'spin',        label:'PLANET SPIN',  min:0,  max:2,   step:0.05,def:0.3},
       {key:'sphereSize',  label:'SPHERE SIZE',  min:2,  max:10,  step:0.1, def:6},
       {key:'horizon',     label:'HORIZON',      min:0.3,max:1.0, step:0.02,def:0.72},
+      {key:'capAngle',    label:'VISIBLE CAP',  min:20, max:90,  step:1,  def:50},
       {key:'cursorPull',  label:'CURSOR PULL',  min:0,  max:3,   step:0.05,def:1.2}
     ]
   }
@@ -1170,12 +1171,12 @@ function mount(target, options){
     var c = cfg.globe;
     globePoles = [];
     for(var i=0;i<c.poles;i++){
-      globePoles.push({dir: randomCapDirection(80), sign: Math.random()<0.5?-1:1});
+      globePoles.push({dir: randomCapDirection(c.capAngle*0.6), sign: Math.random()<0.5?-1:1});
     }
     var center = globeSphereCenter(new THREE.Vector3());
     globeParticles = [];
     for(var j=0;j<c.count;j++){
-      var dir = randomCapDirection(78);
+      var dir = randomCapDirection(c.capAngle*0.85);
       globeParticles.push({
         pos: center.clone().addScaledVector(dir, c.sphereSize),
         vel: new THREE.Vector3(),
@@ -1186,6 +1187,7 @@ function mount(target, options){
   }
   function resetGlobe(){ initGlobe(); }
   var gTmpRel=new THREE.Vector3(), gTmpTan=new THREE.Vector3(), gTmpField=new THREE.Vector3(), gTmpCenter=new THREE.Vector3();
+  var GLOBE_UP = new THREE.Vector3(0,1,0);
   function globeFieldAt(dirOnSphere, particle, c){
     gTmpField.set(0,0,0);
     for(var i=0;i<globePoles.length;i++){
@@ -1205,6 +1207,7 @@ function mount(target, options){
     return gTmpField;
   }
   var globeClock = 0;
+  var GLOBE_MAX_SPEED = 2.2;
   function updateGlobe(dt, time){
     globeClock = time;
     var c = cfg.globe;
@@ -1214,6 +1217,7 @@ function mount(target, options){
     if(spinAngle !== 0){
       for(var p=0;p<globePoles.length;p++) globePoles[p].dir.applyAxisAngle(GLOBE_SPIN_AXIS, spinAngle);
     }
+    var capLimitRad = c.capAngle*Math.PI/180;
     for(var i=0;i<globeParticles.length;i++){
       var particle = globeParticles[i];
       gTmpRel.subVectors(particle.pos, gTmpCenter);
@@ -1229,9 +1233,33 @@ function mount(target, options){
           field.add(cTan.multiplyScalar(c.cursorPull*0.6/ang));
         }
       }
+      // same "runaway multi-vortex" problem as FIELD — a soft leash back toward the
+      // visible cap, so nothing ever slips over the horizon or off-screen, and any
+      // sudden speed-up (chaotic advection near where poles' fields cancel) settles
+      // back down instead of accelerating away.
+      var angFromUp = Math.acos(Math.min(1, Math.max(-1, dirOnSphere.dot(GLOBE_UP))));
+      if(angFromUp > capLimitRad){
+        var toUp = new THREE.Vector3().copy(GLOBE_UP).addScaledVector(dirOnSphere, -dirOnSphere.dot(GLOBE_UP));
+        if(toUp.lengthSq()>1e-8) toUp.normalize();
+        var excess = angFromUp - capLimitRad;
+        field.addScaledVector(toUp, Math.min(excess*excess*14.0, 6.0));
+      }
+
       particle.vel.lerp(field, 0.15);
       particle.vel.addScaledVector(dirOnSphere, -particle.vel.dot(dirOnSphere)); // keep tangent
+      if(particle.vel.lengthSq() > GLOBE_MAX_SPEED*GLOBE_MAX_SPEED) particle.vel.setLength(GLOBE_MAX_SPEED);
       dirOnSphere.addScaledVector(particle.vel, dt*c.speed*0.35).normalize();
+      // hard safety clamp: guarantees nothing ever crosses more than ~10% past the
+      // visible cap, even during a strong chaotic-advection speed spike.
+      var angNow = Math.acos(Math.min(1, Math.max(-1, dirOnSphere.dot(GLOBE_UP))));
+      var hardCapRad = capLimitRad*1.1;
+      if(angNow > hardCapRad){
+        var clampAxis = new THREE.Vector3().crossVectors(GLOBE_UP, dirOnSphere);
+        if(clampAxis.lengthSq()>1e-10){
+          clampAxis.normalize();
+          dirOnSphere = GLOBE_UP.clone().applyAxisAngle(clampAxis, hardCapRad);
+        }
+      }
       particle.pos.copy(gTmpCenter).addScaledVector(dirOnSphere, c.sphereSize);
     }
   }
