@@ -162,7 +162,7 @@ var MODE_SCENE_DEFAULTS = {
   growth:   {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
   network:  {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
   globe:    {arrowStyle:'cone', flatMode:false, arrowScale:0.50, cam:{theta:82.9, phi:72.0, radius:6.62}, restrictStyle:true},
-  startrek: {arrowStyle:'cone', flatMode:false, arrowScale:0.80, cam:{theta:354.7,phi:92.7, radius:6.62}, restrictStyle:true}
+  startrek: {arrowStyle:'cone', flatMode:false, arrowScale:0.80, cam:{theta:0, phi:90, radius:6.62}, restrictStyle:true}
 };
 
 var ARROW_LOCAL_POINTS_BY_STYLE = {}; // style key -> deduplicated local vertices, used for SVG silhouette export
@@ -554,9 +554,14 @@ function mount(target, options){
             tabsEls[k].style.color = (k===m)?'#ececea':'#141414';
           });
           rebuildModeParams();
-          resetSimForMode();
           updateArrowGlobalSectionVisibility();
+          // Apply the new camera angle FIRST and update camera.position immediately
+          // (not on the next animation frame) — STARTREK derives its "forward" flight
+          // axis from camera.position at reset time, so resetting the sim before the
+          // camera has actually moved would fly everyone off in the old direction.
           applyModeSceneDefaults();
+          applyOrbit();
+          resetSimForMode();
         });
         tabsEls[m] = t;
         tabsRow.appendChild(t);
@@ -660,9 +665,10 @@ function mount(target, options){
       btnRotate.style.borderColor = state.autoRotate ? '#ff5a1f' : '#1c1c1c';
     });
     btnReset.addEventListener('click', function(){
-      resetSimForMode();
       var d = MODE_SCENE_DEFAULTS[state.mode];
       if(d){ orbit.theta = d.cam.theta*Math.PI/180; orbit.phi = d.cam.phi*Math.PI/180; orbit.radius = d.cam.radius; }
+      applyOrbit();
+      resetSimForMode();
     });
     btnRow.appendChild(btnRotate); btnRow.appendChild(btnReset);
     panelEl.appendChild(btnRow);
