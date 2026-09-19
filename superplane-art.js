@@ -90,6 +90,15 @@ var MODES = {
       {key:'capAngle',    label:'VISIBLE CAP',  min:20, max:90,  step:1,  def:50},
       {key:'cursorPull',  label:'CURSOR PULL',  min:0,  max:3,   step:0.05,def:1.2}
     ]
+  },
+  startrek: {
+    label: 'STARTREK PARAMS',
+    params: [
+      {key:'count',      label:'STARS',       min:200,max:1500,step:50, def:800},
+      {key:'speed',      label:'WARP SPEED',  min:0.2,max:5,   step:0.1, def:1.5},
+      {key:'spread',     label:'TUNNEL WIDTH',min:1,  max:12,  step:0.2, def:5},
+      {key:'cursorPull', label:'STEER',       min:0,  max:3,   step:0.05,def:1.0}
+    ]
   }
 };
 var GLOBAL_PARAMS = [
@@ -475,7 +484,7 @@ function mount(target, options){
   var showPanel = !!options.panel;
   var allowModeSwitch = options.allowModeSwitch !== false;
 
-  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}, globe:{}};
+  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}, globe:{}, startrek:{}};
   GLOBAL_PARAMS.forEach(function(p){ cfg.global[p.key] = p.def; });
   cfg.global.arrowStyle = 'flat';
   Object.keys(MODES).forEach(function(m){
@@ -514,7 +523,7 @@ function mount(target, options){
     if(allowModeSwitch){
       var tabsRow = document.createElement('div');
       tabsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3, 1fr);border:1px solid #1c1c1c;border-right:none;border-bottom:none;margin-bottom:14px;';
-      var MODE_KEYS = ['field','school','growth','network','globe'];
+      var MODE_KEYS = ['field','school','growth','network','globe','startrek'];
       MODE_KEYS.forEach(function(m, i){
         var t = document.createElement('div');
         t.textContent = m.toUpperCase();
@@ -1192,6 +1201,58 @@ function mount(target, options){
     }
   }
   function resetGlobe(){ initGlobe(); }
+
+  /* ---------------- STARTREK MODE ----------------
+     A classic warp/starfield flythrough: no vortices, no attraction — arrows just
+     travel in one constant direction (the camera's forward axis, fixed once so a
+     later camera drag doesn't reshuffle the tunnel) and recycle to the far distance
+     once they pass the camera. A star lined up with the view axis points straight
+     back at the camera, so with the CONE arrow style it reads as a simple point —
+     exactly like a distant star — while off-axis ones streak past at an angle,
+     purely from perspective, the same way real starfield/warp effects work. */
+  var starParticles = [];
+  var starForward = new THREE.Vector3(), starRight = new THREE.Vector3(), starUp = new THREE.Vector3();
+  var STAR_FAR = 26, STAR_NEAR = 0.8, STAR_LEN = 0.45;
+  function computeStarBasis(){
+    starForward.copy(camera.position).normalize().multiplyScalar(-1); // camera -> origin
+    var worldUp = new THREE.Vector3(0,1,0);
+    starRight.crossVectors(starForward, worldUp);
+    if(starRight.lengthSq()<1e-6) starRight.set(1,0,0); else starRight.normalize();
+    starUp.crossVectors(starRight, starForward).normalize();
+  }
+  function initStarTrek(){
+    computeStarBasis();
+    starParticles = [];
+    var c = cfg.startrek;
+    for(var i=0;i<c.count;i++){
+      starParticles.push({
+        depth: STAR_NEAR + Math.random()*(STAR_FAR-STAR_NEAR),
+        offR: (Math.random()-0.5)*2*c.spread,
+        offU: (Math.random()-0.5)*2*c.spread
+      });
+    }
+  }
+  function resetStarTrek(){ initStarTrek(); }
+  function updateStarTrek(dt){
+    var c = cfg.startrek;
+    var steerR=0, steerU=0;
+    if(interactionActive && c.cursorPull>0){
+      steerR = interactionPoint.dot(starRight)*0.06*c.cursorPull;
+      steerU = interactionPoint.dot(starUp)*0.06*c.cursorPull;
+    }
+    for(var i=0;i<starParticles.length;i++){
+      var s = starParticles[i];
+      s.depth -= c.speed*dt*4.0;
+      s.offR += steerR*dt;
+      s.offU += steerU*dt;
+      if(s.depth < STAR_NEAR){
+        s.depth = STAR_FAR;
+        s.offR = (Math.random()-0.5)*2*c.spread;
+        s.offU = (Math.random()-0.5)*2*c.spread;
+      }
+    }
+  }
+
   var gTmpRel=new THREE.Vector3(), gTmpTan=new THREE.Vector3(), gTmpField=new THREE.Vector3(), gTmpCenter=new THREE.Vector3();
   var GLOBE_UP = new THREE.Vector3(0,1,0);
   function globeFieldAt(dirOnSphere, particle, c){
@@ -1362,6 +1423,18 @@ function mount(target, options){
         var d = p.vel.lengthSq()>1e-6 ? p.vel.clone().normalize() : X_AXIS;
         return {pos:p.pos, dir:d, len:FIELD_LEN};
       });
+    } else if(state.mode==='startrek'){
+      poleGroup.visible = false;
+      hideNetworkVisuals();
+      hideGlobeVisuals();
+      var starDir = starForward.clone().multiplyScalar(-1); // points back toward camera
+      assignInstances(starParticles, function(s){
+        var pos = camera.position.clone()
+          .addScaledVector(starForward, s.depth)
+          .addScaledVector(starRight, s.offR)
+          .addScaledVector(starUp, s.offU);
+        return {pos: pos, dir: starDir, len: STAR_LEN};
+      });
     }
   }
   function hideGlobeVisuals(){
@@ -1436,8 +1509,9 @@ function mount(target, options){
     else if(state.mode==='growth') resetGrowth();
     else if(state.mode==='network') resetNetwork();
     else if(state.mode==='globe') resetGlobe();
+    else if(state.mode==='startrek') resetStarTrek();
   }
-  initField(); initSchool(); initNetwork(); initGlobe();
+  initField(); initSchool(); initNetwork(); initGlobe(); initStarTrek();
 
   /* ---------------- panel: mode params rebuild (needs functions above defined first) ---------------- */
   function rebuildModeParams(){
@@ -1545,6 +1619,7 @@ function mount(target, options){
     else if(state.mode==='growth') updateGrowth(dt, elapsed);
     else if(state.mode==='network') updateNetwork(dt, elapsed);
     else if(state.mode==='globe') updateGlobe(dt, elapsed);
+    else if(state.mode==='startrek') updateStarTrek(dt);
 
     composeForMode(elapsed);
 
@@ -1557,7 +1632,8 @@ function mount(target, options){
       var activeCount = state.mode==='field' ? fieldParticles.length :
                          state.mode==='school' ? agents.length :
                          state.mode==='network' ? networkNodes.length :
-                         state.mode==='globe' ? globeParticles.length : segments.length;
+                         state.mode==='globe' ? globeParticles.length :
+                         state.mode==='startrek' ? starParticles.length : segments.length;
       readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
     }
     if(camCoordsEl){
