@@ -79,14 +79,14 @@ var MODES = {
   globe: {
     label: 'GLOBE PARAMS',
     params: [
-      {key:'count',       label:'ARROWS',       min:100,max:1000,step:20, def:500},
+      {key:'count',       label:'ARROWS',       min:100,max:1000,step:20, def:1000},
       {key:'poles',       label:'POLE COUNT',   min:2,  max:6,   step:1,  def:4},
       {key:'strength',    label:'POLE STRENGTH',min:0.2,max:3,   step:0.05,def:1.0},
-      {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.6},
-      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:0.8},
+      {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.35},
+      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:2.0},
       {key:'spin',        label:'PLANET SPIN',  min:0,  max:2,   step:0.05,def:0.3},
-      {key:'sphereSize',  label:'SPHERE SIZE',  min:2,  max:10,  step:0.1, def:6},
-      {key:'horizon',     label:'HORIZON',      min:0.3,max:1.0, step:0.02,def:0.72},
+      {key:'sphereSize',  label:'SPHERE SIZE',  min:2,  max:10,  step:0.1, def:4.6},
+      {key:'horizon',     label:'HORIZON',      min:0.3,max:1.0, step:0.02,def:0.64},
       {key:'capAngle',    label:'VISIBLE CAP',  min:20, max:90,  step:1,  def:50},
       {key:'cursorPull',  label:'CURSOR PULL',  min:0,  max:3,   step:0.05,def:1.2}
     ]
@@ -94,10 +94,10 @@ var MODES = {
   startrek: {
     label: 'STARTREK PARAMS',
     params: [
-      {key:'count',      label:'STARS',       min:200,max:1500,step:50, def:800},
+      {key:'count',      label:'STARS',       min:200,max:1500,step:50, def:1500},
       {key:'speed',      label:'WARP SPEED',  min:0.2,max:5,   step:0.1, def:1.5},
-      {key:'spread',     label:'TUNNEL WIDTH',min:1,  max:12,  step:0.2, def:5},
-      {key:'cursorPull', label:'STEER',       min:0,  max:3,   step:0.05,def:1.0}
+      {key:'spread',     label:'TUNNEL WIDTH',min:1,  max:12,  step:0.2, def:5.6},
+      {key:'cursorPull', label:'STEER',       min:0,  max:3,   step:0.05,def:3.0}
     ]
   }
 };
@@ -149,6 +149,21 @@ var ARROW_STYLES = [
 // ARROW SCALE applies (no separate LINE THICKNESS control) — as opposed to 'cone',
 // which is a real 3D volume with its own thickness.
 var FLAT_STYLE_KEYS = {flat:true, chevron:true};
+
+// Each mode resets to its own known-good composition when selected from the tabs —
+// arrow style, FLAT, ARROW SCALE and the camera angle. GLOBE and STARTREK depend on
+// real depth and on the CONE style specifically (a flat/billboarded arrow can't sit
+// flush on a curved globe surface, and only a real 3D cone reads as a point when it
+// points straight at the camera in STARTREK) — so for those two, ARROW STYLE and
+// FLAT are also locked (disabled in the UI) rather than just defaulted.
+var MODE_SCENE_DEFAULTS = {
+  field:    {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
+  school:   {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
+  growth:   {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
+  network:  {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
+  globe:    {arrowStyle:'cone', flatMode:false, arrowScale:0.50, cam:{theta:82.9, phi:72.0, radius:6.62}, restrictStyle:true},
+  startrek: {arrowStyle:'cone', flatMode:false, arrowScale:0.80, cam:{theta:354.7,phi:92.7, radius:6.62}, restrictStyle:true}
+};
 
 var ARROW_LOCAL_POINTS_BY_STYLE = {}; // style key -> deduplicated local vertices, used for SVG silhouette export
 var sharedArrowGeoByStyle = {};       // style key -> BufferGeometry
@@ -386,6 +401,8 @@ function makeRow(param, getVal, setVal, onChange){
   });
   refresh();
   row.appendChild(val); row.appendChild(input); row.appendChild(label);
+  row.rangeInput = input;
+  input.setExternalValue = function(v){ input.value = v; setVal(v); refresh(); };
   return row;
 }
 
@@ -539,6 +556,7 @@ function mount(target, options){
           rebuildModeParams();
           resetSimForMode();
           updateArrowGlobalSectionVisibility();
+          applyModeSceneDefaults();
         });
         tabsEls[m] = t;
         tabsRow.appendChild(t);
@@ -596,6 +614,37 @@ function mount(target, options){
     }
     updateArrowGlobalSectionVisibility();
 
+    // Reset to this mode's own known-good composition every time it's selected —
+    // style, FLAT, ARROW SCALE and camera angle — rather than carrying over whatever
+    // was left from the previous tab. GLOBE/STARTREK also lock ARROW STYLE and FLAT
+    // in the UI (disabled, not just defaulted) since those two only work with a real
+    // 3D CONE and full depth.
+    function applyStyleRestrictionUI(){
+      var d = MODE_SCENE_DEFAULTS[state.mode];
+      var restrict = d ? d.restrictStyle : false;
+      styleSelect.value = cfg.global.arrowStyle;
+      styleSelect.disabled = restrict;
+      styleSelect.style.opacity = restrict ? '0.5' : '1';
+      styleSelect.style.cursor = restrict ? 'not-allowed' : 'pointer';
+      flatCheckbox.checked = flatMode;
+      flatCheckbox.disabled = restrict;
+      flatRow.style.opacity = restrict ? '0.5' : '1';
+      flatRow.style.cursor = restrict ? 'not-allowed' : 'pointer';
+    }
+    function applyModeSceneDefaults(){
+      var d = MODE_SCENE_DEFAULTS[state.mode];
+      if(!d) return;
+      cfg.global.arrowStyle = d.arrowStyle;
+      flatMode = d.flatMode;
+      if(arrowScaleRowEl && arrowScaleRowEl.rangeInput) arrowScaleRowEl.rangeInput.setExternalValue(d.arrowScale);
+      else cfg.global.arrowScale = d.arrowScale;
+      orbit.theta = d.cam.theta*Math.PI/180;
+      orbit.phi = d.cam.phi*Math.PI/180;
+      orbit.radius = d.cam.radius;
+      applyStyleRestrictionUI();
+      updateLineThicknessVisibility();
+    }
+
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;margin:8px 0 14px;';
     var btnRotate = document.createElement('button');
@@ -612,7 +661,8 @@ function mount(target, options){
     });
     btnReset.addEventListener('click', function(){
       resetSimForMode();
-      orbit.radius = 6.62; orbit.theta = 6.223844112611779; orbit.phi = 1.616174887346749;
+      var d = MODE_SCENE_DEFAULTS[state.mode];
+      if(d){ orbit.theta = d.cam.theta*Math.PI/180; orbit.phi = d.cam.phi*Math.PI/180; orbit.radius = d.cam.radius; }
     });
     btnRow.appendChild(btnRotate); btnRow.appendChild(btnReset);
     panelEl.appendChild(btnRow);
@@ -640,6 +690,8 @@ function mount(target, options){
     flatCheckbox.addEventListener('change', function(){ flatMode = flatCheckbox.checked; });
     flatRow.appendChild(flatCheckbox); flatRow.appendChild(flatLabelText);
     panelEl.appendChild(flatRow);
+
+    applyStyleRestrictionUI();
 
     camCoordsEl = document.createElement('div');
     camCoordsEl.style.cssText = 'margin-bottom:14px;line-height:1.6;color:#3a3a38;';
@@ -1237,8 +1289,8 @@ function mount(target, options){
     var c = cfg.startrek;
     var steerR=0, steerU=0;
     if(interactionActive && c.cursorPull>0){
-      steerR = interactionPoint.dot(starRight)*0.06*c.cursorPull;
-      steerU = interactionPoint.dot(starUp)*0.06*c.cursorPull;
+      steerR = interactionPoint.dot(starRight)*0.22*c.cursorPull;
+      steerU = interactionPoint.dot(starUp)*0.22*c.cursorPull;
     }
     for(var i=0;i<starParticles.length;i++){
       var s = starParticles[i];
