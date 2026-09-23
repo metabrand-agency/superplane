@@ -10,11 +10,11 @@
  *
  * mount(target, options):
  *   target  - CSS selector string or a DOM element
- *   options.mode            'field' | 'school' | 'growth' | 'network'   (default 'field')
+ *   options.mode            'field' | 'school' | 'growth' | 'network' | 'globe' | 'startrek'  (default 'field')
  *   options.panel           show the utility control panel  (default false)
- *   options.allowModeSwitch show FIELD/SCHOOL/GROWTH tabs, only used if panel:true (default true)
+ *   options.allowModeSwitch show mode tabs, only used if panel:true (default true)
  *   options.height          CSS height if the container has none set, e.g. '520px' (default '100%')
- *   options.overrides       {field:{...}, school:{...}, growth:{...}, global:{...}} param overrides
+ *   options.overrides       {field:{...}, school:{...}, growth:{...}, network:{...}, globe:{...}, startrek:{...}, global:{...}} param overrides
  * Returns {destroy(){...}} handle.
  */
 (function(global){
