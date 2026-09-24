@@ -1359,13 +1359,14 @@ function mount(target, options){
      visible front. Arrows circulate under the combined pull of four poles (two close
      pairs, one per region) — a single pole's field is a perfect circle, but summing
      two nearby poles bends that into the lumpy, non-circular nested-loop shape from
-     the reference. A large-scale turbulence field (evaluated from each particle's own
-     position, not an independent per-particle phase) adds a slow, coherent sweep to
-     the paths — nearby particles get similar distortion, so it reads as smooth
-     drifting curvature, not jitter. A soft+hard angular leash toward the camera-facing
-     axis keeps everything inside the visible cap, the same technique used in GLOBE. */
+     the reference. This mirrors GLOBE's field/turbulence/containment math exactly
+     (including its velocity cap, which SPIRAL was originally missing — without it,
+     particles passing close to a pole can spike to a very high speed in one frame and
+     jump far along the field in lockstep with other nearby particles, which is what
+     reads as "everything lined up in a row"). */
   var spiralParticles = [], spiralPoles = [];
   var SPIRAL_FRONT = new THREE.Vector3(0,0,1); // the camera-facing axis for this mode's fixed front-on view
+  var SPIRAL_MAX_SPEED = 2.2;
   function poleDirFromPolar(polarDeg, azimuthDeg){
     var polar = polarDeg*Math.PI/180, az = azimuthDeg*Math.PI/180;
     return new THREE.Vector3(Math.sin(polar)*Math.cos(az), Math.sin(polar)*Math.sin(az), Math.cos(polar));
@@ -1387,54 +1388,57 @@ function mount(target, options){
       spiralParticles.push({
         dirOnSphere: poleDirFromPolar(polar, az),
         vel: new THREE.Vector3(),
-        prevDir: null
+        prevDir: null,
+        axisSeed: new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).normalize(),
+        seed: Math.random()*1000
       });
     }
   }
   function resetSpiral(){ initSpiral(); }
-  var spTmpTan=new THREE.Vector3(), spTmpField=new THREE.Vector3(), spTmpAxis=new THREE.Vector3(), spTmpToFront=new THREE.Vector3();
-  function spiralTurbulenceAt(dir, time, scale, out){
-    if(scale<=0){ out.set(0,0,0); return out; }
-    var n1 = Math.sin(dir.x*1.3+time*0.15) + Math.sin(dir.y*1.7-time*0.11) + Math.sin(dir.z*1.1+time*0.09);
-    var n2 = Math.cos(dir.y*1.5-time*0.13) + Math.cos(dir.z*1.9+time*0.10) + Math.cos(dir.x*1.2-time*0.08);
-    spTmpAxis.set(n1, n2, (n1-n2)*0.5);
-    if(spTmpAxis.lengthSq()<1e-8) spTmpAxis.set(1,0,0); else spTmpAxis.normalize();
-    out.crossVectors(spTmpAxis, dir);
-    if(out.lengthSq()>1e-8) out.normalize();
-    return out.multiplyScalar(scale*0.35);
+  var spTmpTan=new THREE.Vector3(), spTmpField=new THREE.Vector3(), spTmpToFront=new THREE.Vector3();
+  var spiralClock = 0;
+  function spiralFieldAt(dirOnSphere, particle, c){
+    spTmpField.set(0,0,0);
+    for(var i=0;i<spiralPoles.length;i++){
+      var pole = spiralPoles[i];
+      var angDist = Math.max(1 - dirOnSphere.dot(pole.dir), 0.02);
+      spTmpTan.crossVectors(pole.dir, dirOnSphere);
+      if(spTmpTan.lengthSq()>1e-8) spTmpTan.normalize();
+      spTmpTan.multiplyScalar(pole.sign*c.strength*0.6/angDist);
+      spTmpField.add(spTmpTan);
+    }
+    if(c.turbulence>0){
+      spTmpTan.crossVectors(particle.axisSeed, dirOnSphere);
+      if(spTmpTan.lengthSq()>1e-8) spTmpTan.normalize();
+      spTmpTan.multiplyScalar(Math.sin(spiralClock*0.3 + particle.seed)*c.turbulence*0.35);
+      spTmpField.add(spTmpTan);
+    }
+    return spTmpField;
   }
   function updateSpiral(dt, time){
+    spiralClock = time;
     var c = cfg.spiral;
     var capRad = c.capAngle*Math.PI/180;
     var hardCapRad = capRad*1.1;
     for(var i=0;i<spiralParticles.length;i++){
       var p = spiralParticles[i];
       var dir = p.dirOnSphere;
-      spTmpField.set(0,0,0);
-      for(var j=0;j<spiralPoles.length;j++){
-        var pole = spiralPoles[j];
-        var angDist = Math.max(1-dir.dot(pole.dir), 0.03);
-        var w = 1/angDist;
-        spTmpTan.crossVectors(pole.dir, dir);
-        if(spTmpTan.lengthSq()>1e-8) spTmpTan.normalize();
-        spTmpField.addScaledVector(spTmpTan, pole.sign*c.strength*w*0.35);
-      }
-      var turb = spiralTurbulenceAt(dir, time, c.turbulence, new THREE.Vector3());
-      spTmpField.add(turb);
-
-      p.vel.lerp(spTmpField, 0.15);
-      p.vel.addScaledVector(dir, -dir.dot(p.vel)); // keep tangent
+      var field = spiralFieldAt(dir, p, c);
 
       var angFromFront = Math.acos(Math.min(1, Math.max(-1, dir.dot(SPIRAL_FRONT))));
       if(angFromFront > capRad){
         spTmpToFront.copy(SPIRAL_FRONT).addScaledVector(dir, -dir.dot(SPIRAL_FRONT));
         if(spTmpToFront.lengthSq()>1e-8) spTmpToFront.normalize();
         var excess = angFromFront-capRad;
-        p.vel.addScaledVector(spTmpToFront, Math.min(excess*excess*14, 6));
+        field.addScaledVector(spTmpToFront, Math.min(excess*excess*14, 6));
       }
 
+      p.vel.lerp(field, 0.15);
+      p.vel.addScaledVector(dir, -dir.dot(p.vel)); // keep tangent
+      if(p.vel.lengthSq() > SPIRAL_MAX_SPEED*SPIRAL_MAX_SPEED) p.vel.setLength(SPIRAL_MAX_SPEED);
+
       p.prevDir = dir.clone();
-      dir.addScaledVector(p.vel, dt*c.speed*0.5).normalize();
+      dir.addScaledVector(p.vel, dt*c.speed*0.35).normalize();
 
       var angNow = Math.acos(Math.min(1, Math.max(-1, dir.dot(SPIRAL_FRONT))));
       if(angNow > hardCapRad){
