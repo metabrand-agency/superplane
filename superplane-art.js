@@ -1422,7 +1422,7 @@ function mount(target, options){
     var c = cfg.spiral;
     var coreLimitRad = c.respawnAngle*Math.PI/180;
     var decayK = 0.7*c.inwardPull*c.speed;
-    var azSpeed = 2.8*c.strength*c.speed;
+    var azSpeed = 1.1*c.strength*c.speed;
     for(var i=0;i<spiralParticles.length;i++){
       var p = spiralParticles[i];
       p.angle *= Math.exp(-decayK*p.rateJitter*dt);
