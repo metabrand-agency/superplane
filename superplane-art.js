@@ -519,13 +519,28 @@ function mount(target, options){
   Object.keys(MODES).forEach(function(m){
     MODES[m].params.forEach(function(p){ cfg[m][p.key] = p.def; });
   });
+
+  var state = { mode: options.mode || 'field', autoRotate: false };
+
+  // Apply this mode's own scene defaults (arrow style, FLAT, ARROW SCALE, camera) as
+  // the baseline BEFORE any explicit options/overrides are layered on — this is what
+  // keeps GLOBE/STARTREK/SPIRAL correct even when mounted directly into that mode
+  // (e.g. a standalone embed), not only when switched into via the panel tabs.
+  var initialSceneDefaults = MODE_SCENE_DEFAULTS[state.mode];
+  var initialFlatModeDefault = true;
+  var initialCamDefault = null;
+  if(initialSceneDefaults){
+    cfg.global.arrowStyle = initialSceneDefaults.arrowStyle;
+    cfg.global.arrowScale = initialSceneDefaults.arrowScale;
+    initialFlatModeDefault = initialSceneDefaults.flatMode;
+    initialCamDefault = initialSceneDefaults.cam;
+  }
+
   if(options.overrides){
     Object.keys(options.overrides).forEach(function(section){
       if(cfg[section]) Object.assign(cfg[section], options.overrides[section]);
     });
   }
-
-  var state = { mode: options.mode || 'field', autoRotate: false };
 
   /* ---------------- DOM ---------------- */
   var root = document.createElement('div');
@@ -536,7 +551,7 @@ function mount(target, options){
   var camCoordsEl = null;
   var cameraLocked = options.cameraLocked !== false;
   var interactiveEnabled = options.interactive !== false;
-  var flatMode = options.flatMode !== false;
+  var flatMode = (typeof options.flatMode === 'boolean') ? options.flatMode : initialFlatModeDefault;
   var FLAT_Z_SQUASH = 0.04; // how much world-space depth remains when FLAT is checked
   var renderPosScratch = new THREE.Vector3();
   if(showPanel){
@@ -773,6 +788,11 @@ function mount(target, options){
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
   var orbit = {radius:6.62, theta:6.223844112611779, phi:1.616174887346749};
+  if(initialCamDefault){
+    orbit.theta = initialCamDefault.theta*Math.PI/180;
+    orbit.phi = initialCamDefault.phi*Math.PI/180;
+    orbit.radius = initialCamDefault.radius;
+  }
   if(options.camera){
     if(typeof options.camera.theta === 'number') orbit.theta = options.camera.theta;
     if(typeof options.camera.phi === 'number') orbit.phi = options.camera.phi;
