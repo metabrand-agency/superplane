@@ -99,6 +99,17 @@ var MODES = {
       {key:'spread',     label:'TUNNEL WIDTH',min:1,  max:12,  step:0.2, def:5.6},
       {key:'cursorPull', label:'STEER',       min:0,  max:3,   step:0.05,def:3.0}
     ]
+  },
+  spiral: {
+    label: 'SPIRAL PARAMS',
+    params: [
+      {key:'count',       label:'ARROWS',       min:100,max:1200,step:20, def:600},
+      {key:'strength',    label:'ROTATION',     min:0.2,max:3,   step:0.05,def:1.2},
+      {key:'inwardPull',  label:'INWARD PULL',  min:0,  max:2,   step:0.05,def:0.55},
+      {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.7},
+      {key:'sphereSize',  label:'SPHERE SIZE',  min:1,  max:6,   step:0.1, def:2.4},
+      {key:'respawnAngle',label:'CORE SIZE',    min:3,  max:25,  step:1,  def:9}
+    ]
   }
 };
 var GLOBAL_PARAMS = [
@@ -162,6 +173,7 @@ var MODE_SCENE_DEFAULTS = {
   growth:   {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
   network:  {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
   globe:    {arrowStyle:'cone', flatMode:false, arrowScale:0.50, cam:{theta:82.9, phi:72.0, radius:6.62}, restrictStyle:true},
+  spiral:   {arrowStyle:'cone', flatMode:false, arrowScale:0.55, cam:{theta:0,    phi:90,   radius:5.2},  restrictStyle:true},
   startrek: {arrowStyle:'cone', flatMode:false, arrowScale:0.80, cam:{theta:0, phi:90, radius:6.62}, restrictStyle:true}
 };
 
@@ -501,7 +513,7 @@ function mount(target, options){
   var showPanel = !!options.panel;
   var allowModeSwitch = options.allowModeSwitch !== false;
 
-  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}, globe:{}, startrek:{}};
+  var cfg = {global:{}, field:{}, school:{}, growth:{}, network:{}, globe:{}, startrek:{}, spiral:{}};
   GLOBAL_PARAMS.forEach(function(p){ cfg.global[p.key] = p.def; });
   cfg.global.arrowStyle = 'flat';
   Object.keys(MODES).forEach(function(m){
@@ -523,6 +535,7 @@ function mount(target, options){
   var panelEl = null, modeParamsEl = null, modeSectionLabel = null, readoutEl = null, tabsEls = {};
   var camCoordsEl = null;
   var cameraLocked = options.cameraLocked !== false;
+  var interactiveEnabled = options.interactive !== false;
   var flatMode = options.flatMode !== false;
   var FLAT_Z_SQUASH = 0.04; // how much world-space depth remains when FLAT is checked
   var renderPosScratch = new THREE.Vector3();
@@ -540,7 +553,7 @@ function mount(target, options){
     if(allowModeSwitch){
       var tabsRow = document.createElement('div');
       tabsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3, 1fr);border:1px solid #1c1c1c;border-right:none;border-bottom:none;margin-bottom:14px;';
-      var MODE_KEYS = ['field','school','growth','network','globe','startrek'];
+      var MODE_KEYS = ['field','school','growth','network','globe','startrek','spiral'];
       MODE_KEYS.forEach(function(m, i){
         var t = document.createElement('div');
         t.textContent = m.toUpperCase();
@@ -836,6 +849,14 @@ function mount(target, options){
   globeSolidMesh.visible = false; globeGridMesh.visible = false;
   scene.add(globeSolidMesh, globeGridMesh);
 
+  /* ---------------- SPIRAL mode visual: a small centered sphere, same look ---------------- */
+  var spiralSolidMesh = new THREE.Mesh(globeSphereGeo, globeSolidMat);
+  var spiralGridMesh = new THREE.Mesh(globeSphereGeo, globeGridMat);
+  spiralGridMesh.scale.setScalar(1.003);
+  spiralSolidMesh.visible = false; spiralGridMesh.visible = false;
+  scene.add(spiralSolidMesh, spiralGridMesh);
+  function hideSpiralVisuals(){ spiralSolidMesh.visible = false; spiralGridMesh.visible = false; }
+
   /* ---------------- interaction ---------------- */
   var raycaster = new THREE.Raycaster();
   var groundPlane = new THREE.Plane(new THREE.Vector3(0,0,1), 0);
@@ -849,40 +870,42 @@ function mount(target, options){
     mouseNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
     mouseNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
   }
-  canvas.addEventListener('pointerdown', function(e){
-    isDragging=true; dragMoved=false; lastX=e.clientX; lastY=e.clientY;
-    try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
-  });
-  canvas.addEventListener('pointermove', function(e){
-    updatePointerNDC(e);
-    interactionActive = true;
-    raycaster.setFromCamera(mouseNDC, camera);
-    raycaster.ray.intersectPlane(groundPlane, interactionPoint);
-    if(isDragging){
-      var dx = e.clientX-lastX, dy = e.clientY-lastY;
-      if(Math.abs(dx)+Math.abs(dy) > 3) dragMoved = true;
-      if(dragMoved && !cameraLocked){
-        orbit.theta -= dx*0.006;
-        orbit.phi = Math.min(2.7, Math.max(0.35, orbit.phi - dy*0.006));
-      }
-      lastX=e.clientX; lastY=e.clientY;
-    }
-  });
-  canvas.addEventListener('pointerup', function(e){
-    if(!dragMoved && state.mode==='growth'){
+  if(interactiveEnabled){
+    canvas.addEventListener('pointerdown', function(e){
+      isDragging=true; dragMoved=false; lastX=e.clientX; lastY=e.clientY;
+      try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    canvas.addEventListener('pointermove', function(e){
       updatePointerNDC(e);
+      interactionActive = true;
       raycaster.setFromCamera(mouseNDC, camera);
-      var hit = new THREE.Vector3();
-      raycaster.ray.intersectPlane(groundPlane, hit);
-      resetGrowth(hit);
-    }
-    isDragging=false; dragMoved=false;
-  });
-  canvas.addEventListener('pointerleave', function(){ interactionActive=false; });
-  canvas.addEventListener('wheel', function(e){
-    e.preventDefault();
-    orbit.radius = Math.min(20, Math.max(3, orbit.radius*(1+e.deltaY*0.001)));
-  }, {passive:false});
+      raycaster.ray.intersectPlane(groundPlane, interactionPoint);
+      if(isDragging){
+        var dx = e.clientX-lastX, dy = e.clientY-lastY;
+        if(Math.abs(dx)+Math.abs(dy) > 3) dragMoved = true;
+        if(dragMoved && !cameraLocked){
+          orbit.theta -= dx*0.006;
+          orbit.phi = Math.min(2.7, Math.max(0.35, orbit.phi - dy*0.006));
+        }
+        lastX=e.clientX; lastY=e.clientY;
+      }
+    });
+    canvas.addEventListener('pointerup', function(e){
+      if(!dragMoved && state.mode==='growth'){
+        updatePointerNDC(e);
+        raycaster.setFromCamera(mouseNDC, camera);
+        var hit = new THREE.Vector3();
+        raycaster.ray.intersectPlane(groundPlane, hit);
+        resetGrowth(hit);
+      }
+      isDragging=false; dragMoved=false;
+    });
+    canvas.addEventListener('pointerleave', function(){ interactionActive=false; });
+    canvas.addEventListener('wheel', function(e){
+      e.preventDefault();
+      orbit.radius = Math.min(20, Math.max(3, orbit.radius*(1+e.deltaY*0.001)));
+    }, {passive:false});
+  }
 
   /* ---------------- FIELD MODE ----------------
      Back to the original multi-pole vortex flow (each particle just follows the
@@ -1311,6 +1334,78 @@ function mount(target, options){
     }
   }
 
+  /* ---------------- SPIRAL MODE ----------------
+     A geomagnetic-style flow: two poles with opposite spin, each pulling particles
+     inward along a spiral path (rotation + inward pull, blended smoothly between the
+     two poles rather than hard-assigned) — this is what produces the yin-yang double
+     spiral look, including the smooth S-curve where the two spirals meet. Particles
+     that spiral all the way into a pole's core simply respawn at the outer edge and
+     start again, so the flow runs forever with no seams or resets to notice — no
+     poles/cursor/camera interactivity by design, this mode is meant to sit fixed on
+     its own page. */
+  var spiralParticles = [], spiralPoles = [];
+  function buildPoleBasis(poleDir){
+    var up = Math.abs(poleDir.y) < 0.9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0);
+    var e1 = new THREE.Vector3().crossVectors(up, poleDir).normalize();
+    var e2 = new THREE.Vector3().crossVectors(poleDir, e1).normalize();
+    return {e1:e1, e2:e2};
+  }
+  function initSpiral(){
+    spiralPoles = [
+      {dir: new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), Math.PI*0.28)
+             .applyAxisAngle(new THREE.Vector3(1,0,0), Math.PI*0.12)},
+      {dir: new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), Math.PI*1.18)
+             .applyAxisAngle(new THREE.Vector3(1,0,0), -Math.PI*0.10)}
+    ];
+    spiralPoles.forEach(function(p){ p.basis = buildPoleBasis(p.dir); });
+    spiralParticles = [];
+    var c = cfg.spiral;
+    for(var i=0;i<c.count;i++){
+      spiralParticles.push(makeSpiralParticle(true));
+    }
+  }
+  function makeSpiralParticle(randomStartAngle){
+    var pole = spiralPoles[Math.random()<0.5?0:1];
+    var angleDeg = randomStartAngle ? (30+Math.random()*55) : (68+Math.random()*12); // 30-85 deg outer band
+    return {
+      pole: pole,
+      angle: angleDeg*Math.PI/180,
+      azimuth: Math.random()*Math.PI*2,
+      spinDir: Math.random()<0.5?1:-1, // half the particles spiral the other way, adds visual variety
+      rateJitter: 0.85+Math.random()*0.3,
+      dirOnSphere: new THREE.Vector3(),
+      prevDir: null
+    };
+  }
+  function resetSpiral(){ initSpiral(); }
+  function spiralDirFromPolar(p){
+    var sinA = Math.sin(p.angle), cosA = Math.cos(p.angle);
+    return new THREE.Vector3()
+      .addScaledVector(p.pole.dir, cosA)
+      .addScaledVector(p.pole.basis.e1, sinA*Math.cos(p.azimuth))
+      .addScaledVector(p.pole.basis.e2, sinA*Math.sin(p.azimuth));
+  }
+  function updateSpiral(dt){
+    var c = cfg.spiral;
+    var coreLimitRad = c.respawnAngle*Math.PI/180;
+    var decayK = 0.7*c.inwardPull*c.speed;
+    var azSpeed = 2.8*c.strength*c.speed;
+    for(var i=0;i<spiralParticles.length;i++){
+      var p = spiralParticles[i];
+      p.angle *= Math.exp(-decayK*p.rateJitter*dt);
+      p.azimuth += azSpeed*p.rateJitter*p.spinDir*dt;
+      p.prevDir = p.dirOnSphere.clone();
+      p.dirOnSphere.copy(spiralDirFromPolar(p));
+      if(p.angle < coreLimitRad){
+        var fresh = makeSpiralParticle(false);
+        p.pole = fresh.pole; p.angle = fresh.angle; p.azimuth = fresh.azimuth;
+        p.spinDir = fresh.spinDir; p.rateJitter = fresh.rateJitter;
+        p.dirOnSphere.copy(spiralDirFromPolar(p));
+        p.prevDir = null;
+      }
+    }
+  }
+
   var gTmpRel=new THREE.Vector3(), gTmpTan=new THREE.Vector3(), gTmpField=new THREE.Vector3(), gTmpCenter=new THREE.Vector3();
   var GLOBE_UP = new THREE.Vector3(0,1,0);
   function globeFieldAt(dirOnSphere, particle, c){
@@ -1431,6 +1526,7 @@ function mount(target, options){
       poleGroup.visible = false;
       hideNetworkVisuals();
       hideGlobeVisuals();
+      hideSpiralVisuals();
       for(var pgi=0; pgi<poleGroup.children.length; pgi++){
         var poleWorldZ = poles[pgi] ? poles[pgi].z : 0;
         poleGroup.children[pgi].position.z = flatMode ? poleWorldZ*FLAT_Z_SQUASH : poleWorldZ;
@@ -1443,6 +1539,7 @@ function mount(target, options){
       poleGroup.visible = false;
       hideNetworkVisuals();
       hideGlobeVisuals();
+      hideSpiralVisuals();
       assignInstances(agents, function(a){
         var d = a.vel.lengthSq()>1e-6 ? a.vel.clone().normalize() : X_AXIS;
         return {pos:a.pos, dir:d, len:SCHOOL_LEN};
@@ -1451,6 +1548,7 @@ function mount(target, options){
       poleGroup.visible = false;
       hideNetworkVisuals();
       hideGlobeVisuals();
+      hideSpiralVisuals();
       assignInstances(segments, function(s){
         // animate each segment growing outward from its own base point (like an
         // extending stick) instead of popping in at full length instantly.
@@ -1464,6 +1562,7 @@ function mount(target, options){
     } else if(state.mode==='network'){
       poleGroup.visible = false;
       hideGlobeVisuals();
+      hideSpiralVisuals();
       baseMesh.count = 0; accentMesh.count = 0;
       baseMesh.instanceMatrix.needsUpdate = true; accentMesh.instanceMatrix.needsUpdate = true;
       frameArrows.length = 0; // SVG export (arrow-silhouette based) has nothing to draw in this mode yet
@@ -1485,6 +1584,7 @@ function mount(target, options){
       poleGroup.visible = false;
       hideNetworkVisuals();
       hideGlobeVisuals();
+      hideSpiralVisuals();
       var starDir = starForward.clone().multiplyScalar(-1); // points back toward camera
       assignInstances(starParticles, function(s){
         var pos = camera.position.clone()
@@ -1492,6 +1592,21 @@ function mount(target, options){
           .addScaledVector(starRight, s.offR)
           .addScaledVector(starUp, s.offU);
         return {pos: pos, dir: starDir, len: STAR_LEN};
+      });
+    } else if(state.mode==='spiral'){
+      poleGroup.visible = false;
+      hideNetworkVisuals();
+      hideGlobeVisuals();
+      spiralSolidMesh.visible = true; spiralGridMesh.visible = true;
+      spiralSolidMesh.scale.setScalar(cfg.spiral.sphereSize);
+      spiralGridMesh.scale.setScalar(cfg.spiral.sphereSize*1.003);
+      assignInstances(spiralParticles, function(p){
+        var d = X_AXIS;
+        if(p.prevDir){
+          d = p.dirOnSphere.clone().sub(p.prevDir);
+          if(d.lengthSq()<1e-10) d = X_AXIS; else d.normalize();
+        }
+        return {pos: p.dirOnSphere.clone().multiplyScalar(cfg.spiral.sphereSize), dir:d, len:FIELD_LEN};
       });
     }
   }
@@ -1568,8 +1683,9 @@ function mount(target, options){
     else if(state.mode==='network') resetNetwork();
     else if(state.mode==='globe') resetGlobe();
     else if(state.mode==='startrek') resetStarTrek();
+    else if(state.mode==='spiral') resetSpiral();
   }
-  initField(); initSchool(); initNetwork(); initGlobe(); initStarTrek();
+  initField(); initSchool(); initNetwork(); initGlobe(); initStarTrek(); initSpiral();
 
   /* ---------------- panel: mode params rebuild (needs functions above defined first) ---------------- */
   function rebuildModeParams(){
@@ -1678,6 +1794,7 @@ function mount(target, options){
     else if(state.mode==='network') updateNetwork(dt, elapsed);
     else if(state.mode==='globe') updateGlobe(dt, elapsed);
     else if(state.mode==='startrek') updateStarTrek(dt);
+    else if(state.mode==='spiral') updateSpiral(dt);
 
     composeForMode(elapsed);
 
@@ -1691,7 +1808,8 @@ function mount(target, options){
                          state.mode==='school' ? agents.length :
                          state.mode==='network' ? networkNodes.length :
                          state.mode==='globe' ? globeParticles.length :
-                         state.mode==='startrek' ? starParticles.length : segments.length;
+                         state.mode==='startrek' ? starParticles.length :
+                         state.mode==='spiral' ? spiralParticles.length : segments.length;
       readoutEl.innerHTML = 'MODE &nbsp;: <b>'+state.mode.toUpperCase()+'</b><br>ARROWS: <b>'+activeCount+'</b><br>TIME &nbsp;: <b>'+elapsed.toFixed(1)+'s</b>';
     }
     if(camCoordsEl){
