@@ -105,11 +105,10 @@ var MODES = {
     params: [
       {key:'count',       label:'ARROWS',       min:100,max:1200,step:20, def:600},
       {key:'strength',    label:'ROTATION',     min:0.2,max:3,   step:0.05,def:1.2},
-      {key:'inwardPull',  label:'INWARD PULL',  min:0,  max:2,   step:0.05,def:0.55},
-      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:0},
-      {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.7},
+      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:6,   step:0.1, def:1.5},
+      {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.6},
       {key:'sphereSize',  label:'SPHERE SIZE',  min:0.5,max:3,   step:0.05,def:1.1},
-      {key:'respawnAngle',label:'CORE SIZE',    min:3,  max:20,  step:1,  def:6}
+      {key:'capAngle',    label:'VISIBLE CAP',  min:25, max:75,  step:1,  def:52}
     ]
   }
 };
@@ -1356,95 +1355,94 @@ function mount(target, options){
   }
 
   /* ---------------- SPIRAL MODE ----------------
-     A geomagnetic-style flow: two poles with opposite spin, each pulling particles
-     inward along a spiral path (rotation + inward pull, blended smoothly between the
-     two poles rather than hard-assigned) — this is what produces the yin-yang double
-     spiral look, including the smooth S-curve where the two spirals meet. Particles
-     that spiral all the way into a pole's core simply respawn at the outer edge and
-     start again, so the flow runs forever with no seams or resets to notice — no
-     poles/cursor/camera interactivity by design, this mode is meant to sit fixed on
-     its own page. */
+     Pure surface flow — no pull toward any hidden "core", nothing happens off the
+     visible front. Arrows circulate under the combined pull of four poles (two close
+     pairs, one per region) — a single pole's field is a perfect circle, but summing
+     two nearby poles bends that into the lumpy, non-circular nested-loop shape from
+     the reference. A large-scale turbulence field (evaluated from each particle's own
+     position, not an independent per-particle phase) adds a slow, coherent sweep to
+     the paths — nearby particles get similar distortion, so it reads as smooth
+     drifting curvature, not jitter. A soft+hard angular leash toward the camera-facing
+     axis keeps everything inside the visible cap, the same technique used in GLOBE. */
   var spiralParticles = [], spiralPoles = [];
-  function buildPoleBasis(poleDir){
-    var up = Math.abs(poleDir.y) < 0.9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0);
-    var e1 = new THREE.Vector3().crossVectors(up, poleDir).normalize();
-    var e2 = new THREE.Vector3().crossVectors(poleDir, e1).normalize();
-    return {e1:e1, e2:e2};
-  }
+  var SPIRAL_FRONT = new THREE.Vector3(0,0,1); // the camera-facing axis for this mode's fixed front-on view
   function poleDirFromPolar(polarDeg, azimuthDeg){
     var polar = polarDeg*Math.PI/180, az = azimuthDeg*Math.PI/180;
     return new THREE.Vector3(Math.sin(polar)*Math.cos(az), Math.sin(polar)*Math.sin(az), Math.cos(polar));
   }
   function initSpiral(){
-    // Both poles kept well inside the front (camera-facing, +Z) hemisphere — same
-    // polar distance from the view axis, opposite azimuths, for a symmetric
-    // side-by-side yin-yang layout that's always fully visible, never wrapping to
-    // the back of the sphere.
+    // Two regions (front-hemisphere-safe, ~40-50deg from the view axis), each made of
+    // two close poles spinning the same way — that pairing is what bends the flow into
+    // organic nested loops instead of one clean circle per region.
     spiralPoles = [
-      {dir: poleDirFromPolar(46, 105)},
-      {dir: poleDirFromPolar(46, 285)}
+      {dir: poleDirFromPolar(40, 92),  sign: 1},
+      {dir: poleDirFromPolar(50, 112), sign: 1},
+      {dir: poleDirFromPolar(40, 272), sign:-1},
+      {dir: poleDirFromPolar(50, 292), sign:-1}
     ];
-    spiralPoles.forEach(function(p){ p.basis = buildPoleBasis(p.dir); });
     spiralParticles = [];
     var c = cfg.spiral;
     for(var i=0;i<c.count;i++){
-      spiralParticles.push(makeSpiralParticle(true));
+      var polar = 10+Math.random()*35, az = Math.random()*360;
+      spiralParticles.push({
+        dirOnSphere: poleDirFromPolar(polar, az),
+        vel: new THREE.Vector3(),
+        prevDir: null
+      });
     }
   }
-  function makeSpiralParticle(randomStartAngle){
-    var pole = spiralPoles[Math.random()<0.5?0:1];
-    // poles sit 46deg from the view axis, so keep each particle's own angle from its
-    // pole modest — otherwise, at an unlucky azimuth, it can wander past the horizon
-    // and onto the back of the sphere where it's barely visible.
-    var angleDeg = randomStartAngle ? (10+Math.random()*24) : (30+Math.random()*6); // 10-34 deg outer band
-    return {
-      pole: pole,
-      angle: angleDeg*Math.PI/180,
-      azimuth: Math.random()*Math.PI*2,
-      spinDir: Math.random()<0.5?1:-1, // half the particles spiral the other way, adds visual variety
-      rateJitter: 0.85+Math.random()*0.3,
-      wobbleAxis: new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).normalize(),
-      wobbleSeed: Math.random()*1000,
-      dirOnSphere: new THREE.Vector3(),
-      prevDir: null
-    };
-  }
   function resetSpiral(){ initSpiral(); }
-  function spiralDirFromPolar(p){
-    var sinA = Math.sin(p.angle), cosA = Math.cos(p.angle);
-    return new THREE.Vector3()
-      .addScaledVector(p.pole.dir, cosA)
-      .addScaledVector(p.pole.basis.e1, sinA*Math.cos(p.azimuth))
-      .addScaledVector(p.pole.basis.e2, sinA*Math.sin(p.azimuth));
+  var spTmpTan=new THREE.Vector3(), spTmpField=new THREE.Vector3(), spTmpAxis=new THREE.Vector3(), spTmpToFront=new THREE.Vector3();
+  function spiralTurbulenceAt(dir, time, scale, out){
+    if(scale<=0){ out.set(0,0,0); return out; }
+    var n1 = Math.sin(dir.x*1.3+time*0.15) + Math.sin(dir.y*1.7-time*0.11) + Math.sin(dir.z*1.1+time*0.09);
+    var n2 = Math.cos(dir.y*1.5-time*0.13) + Math.cos(dir.z*1.9+time*0.10) + Math.cos(dir.x*1.2-time*0.08);
+    spTmpAxis.set(n1, n2, (n1-n2)*0.5);
+    if(spTmpAxis.lengthSq()<1e-8) spTmpAxis.set(1,0,0); else spTmpAxis.normalize();
+    out.crossVectors(spTmpAxis, dir);
+    if(out.lengthSq()>1e-8) out.normalize();
+    return out.multiplyScalar(scale*0.35);
   }
-  var spWobbleTan = new THREE.Vector3();
   function updateSpiral(dt, time){
     var c = cfg.spiral;
-    var coreLimitRad = c.respawnAngle*Math.PI/180;
-    var decayK = 0.7*c.inwardPull*c.speed;
-    var azSpeed = 1.1*c.strength*c.speed;
+    var capRad = c.capAngle*Math.PI/180;
+    var hardCapRad = capRad*1.1;
     for(var i=0;i<spiralParticles.length;i++){
       var p = spiralParticles[i];
-      p.angle *= Math.exp(-decayK*p.rateJitter*dt);
-      p.azimuth += azSpeed*p.rateJitter*p.spinDir*dt;
-      p.prevDir = p.dirOnSphere.clone();
-      var cleanDir = spiralDirFromPolar(p);
-      // turbulence: a bounded sideways wobble on top of the clean mathematical spiral
-      // — it doesn't touch the decaying angle itself, so convergence is unaffected,
-      // it just keeps the path from reading as a perfect, mechanical circle/spiral.
-      if(c.turbulence>0){
-        spWobbleTan.crossVectors(p.wobbleAxis, cleanDir);
-        if(spWobbleTan.lengthSq()>1e-8) spWobbleTan.normalize();
-        cleanDir.addScaledVector(spWobbleTan, Math.sin(time*0.12+p.wobbleSeed)*c.turbulence*0.08).normalize();
+      var dir = p.dirOnSphere;
+      spTmpField.set(0,0,0);
+      for(var j=0;j<spiralPoles.length;j++){
+        var pole = spiralPoles[j];
+        var angDist = Math.max(1-dir.dot(pole.dir), 0.03);
+        var w = 1/angDist;
+        spTmpTan.crossVectors(pole.dir, dir);
+        if(spTmpTan.lengthSq()>1e-8) spTmpTan.normalize();
+        spTmpField.addScaledVector(spTmpTan, pole.sign*c.strength*w*0.35);
       }
-      p.dirOnSphere.copy(cleanDir);
-      if(p.angle < coreLimitRad){
-        var fresh = makeSpiralParticle(false);
-        p.pole = fresh.pole; p.angle = fresh.angle; p.azimuth = fresh.azimuth;
-        p.spinDir = fresh.spinDir; p.rateJitter = fresh.rateJitter;
-        p.wobbleAxis = fresh.wobbleAxis; p.wobbleSeed = fresh.wobbleSeed;
-        p.dirOnSphere.copy(spiralDirFromPolar(p));
-        p.prevDir = null;
+      var turb = spiralTurbulenceAt(dir, time, c.turbulence, new THREE.Vector3());
+      spTmpField.add(turb);
+
+      p.vel.lerp(spTmpField, 0.15);
+      p.vel.addScaledVector(dir, -dir.dot(p.vel)); // keep tangent
+
+      var angFromFront = Math.acos(Math.min(1, Math.max(-1, dir.dot(SPIRAL_FRONT))));
+      if(angFromFront > capRad){
+        spTmpToFront.copy(SPIRAL_FRONT).addScaledVector(dir, -dir.dot(SPIRAL_FRONT));
+        if(spTmpToFront.lengthSq()>1e-8) spTmpToFront.normalize();
+        var excess = angFromFront-capRad;
+        p.vel.addScaledVector(spTmpToFront, Math.min(excess*excess*14, 6));
+      }
+
+      p.prevDir = dir.clone();
+      dir.addScaledVector(p.vel, dt*c.speed*0.5).normalize();
+
+      var angNow = Math.acos(Math.min(1, Math.max(-1, dir.dot(SPIRAL_FRONT))));
+      if(angNow > hardCapRad){
+        var axis = new THREE.Vector3().crossVectors(SPIRAL_FRONT, dir);
+        if(axis.lengthSq()>1e-10){
+          axis.normalize();
+          dir.copy(SPIRAL_FRONT).applyAxisAngle(axis, hardCapRad);
+        }
       }
     }
   }
