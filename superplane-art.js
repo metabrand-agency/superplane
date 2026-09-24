@@ -106,6 +106,7 @@ var MODES = {
       {key:'count',       label:'ARROWS',       min:100,max:1200,step:20, def:600},
       {key:'strength',    label:'ROTATION',     min:0.2,max:3,   step:0.05,def:1.2},
       {key:'inwardPull',  label:'INWARD PULL',  min:0,  max:2,   step:0.05,def:0.55},
+      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:0.7},
       {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.7},
       {key:'sphereSize',  label:'SPHERE SIZE',  min:0.5,max:3,   step:0.05,def:1.1},
       {key:'respawnAngle',label:'CORE SIZE',    min:3,  max:20,  step:1,  def:6}
@@ -1402,6 +1403,8 @@ function mount(target, options){
       azimuth: Math.random()*Math.PI*2,
       spinDir: Math.random()<0.5?1:-1, // half the particles spiral the other way, adds visual variety
       rateJitter: 0.85+Math.random()*0.3,
+      wobbleAxis: new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).normalize(),
+      wobbleSeed: Math.random()*1000,
       dirOnSphere: new THREE.Vector3(),
       prevDir: null
     };
@@ -1414,7 +1417,8 @@ function mount(target, options){
       .addScaledVector(p.pole.basis.e1, sinA*Math.cos(p.azimuth))
       .addScaledVector(p.pole.basis.e2, sinA*Math.sin(p.azimuth));
   }
-  function updateSpiral(dt){
+  var spWobbleTan = new THREE.Vector3();
+  function updateSpiral(dt, time){
     var c = cfg.spiral;
     var coreLimitRad = c.respawnAngle*Math.PI/180;
     var decayK = 0.7*c.inwardPull*c.speed;
@@ -1424,11 +1428,21 @@ function mount(target, options){
       p.angle *= Math.exp(-decayK*p.rateJitter*dt);
       p.azimuth += azSpeed*p.rateJitter*p.spinDir*dt;
       p.prevDir = p.dirOnSphere.clone();
-      p.dirOnSphere.copy(spiralDirFromPolar(p));
+      var cleanDir = spiralDirFromPolar(p);
+      // turbulence: a bounded sideways wobble on top of the clean mathematical spiral
+      // — it doesn't touch the decaying angle itself, so convergence is unaffected,
+      // it just keeps the path from reading as a perfect, mechanical circle/spiral.
+      if(c.turbulence>0){
+        spWobbleTan.crossVectors(p.wobbleAxis, cleanDir);
+        if(spWobbleTan.lengthSq()>1e-8) spWobbleTan.normalize();
+        cleanDir.addScaledVector(spWobbleTan, Math.sin(time*0.6+p.wobbleSeed)*c.turbulence*0.15).normalize();
+      }
+      p.dirOnSphere.copy(cleanDir);
       if(p.angle < coreLimitRad){
         var fresh = makeSpiralParticle(false);
         p.pole = fresh.pole; p.angle = fresh.angle; p.azimuth = fresh.azimuth;
         p.spinDir = fresh.spinDir; p.rateJitter = fresh.rateJitter;
+        p.wobbleAxis = fresh.wobbleAxis; p.wobbleSeed = fresh.wobbleSeed;
         p.dirOnSphere.copy(spiralDirFromPolar(p));
         p.prevDir = null;
       }
@@ -1823,7 +1837,7 @@ function mount(target, options){
     else if(state.mode==='network') updateNetwork(dt, elapsed);
     else if(state.mode==='globe') updateGlobe(dt, elapsed);
     else if(state.mode==='startrek') updateStarTrek(dt);
-    else if(state.mode==='spiral') updateSpiral(dt);
+    else if(state.mode==='spiral') updateSpiral(dt, elapsed);
 
     composeForMode(elapsed);
 
