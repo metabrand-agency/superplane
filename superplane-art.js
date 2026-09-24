@@ -107,8 +107,8 @@ var MODES = {
       {key:'strength',    label:'ROTATION',     min:0.2,max:3,   step:0.05,def:1.2},
       {key:'inwardPull',  label:'INWARD PULL',  min:0,  max:2,   step:0.05,def:0.55},
       {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.7},
-      {key:'sphereSize',  label:'SPHERE SIZE',  min:1,  max:6,   step:0.1, def:2.4},
-      {key:'respawnAngle',label:'CORE SIZE',    min:3,  max:25,  step:1,  def:9}
+      {key:'sphereSize',  label:'SPHERE SIZE',  min:0.5,max:3,   step:0.05,def:1.1},
+      {key:'respawnAngle',label:'CORE SIZE',    min:3,  max:20,  step:1,  def:6}
     ]
   }
 };
@@ -173,7 +173,7 @@ var MODE_SCENE_DEFAULTS = {
   growth:   {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
   network:  {arrowStyle:'flat', flatMode:true,  arrowScale:0.85, cam:{theta:356.6,phi:92.6,radius:6.62}, restrictStyle:false},
   globe:    {arrowStyle:'cone', flatMode:false, arrowScale:0.50, cam:{theta:82.9, phi:72.0, radius:6.62}, restrictStyle:true},
-  spiral:   {arrowStyle:'cone', flatMode:false, arrowScale:0.55, cam:{theta:0,    phi:90,   radius:5.2},  restrictStyle:true},
+  spiral:   {arrowStyle:'cone', flatMode:false, arrowScale:0.26, cam:{theta:0,    phi:90,   radius:5.2},  restrictStyle:true},
   startrek: {arrowStyle:'cone', flatMode:false, arrowScale:0.80, cam:{theta:0, phi:90, radius:6.62}, restrictStyle:true}
 };
 
@@ -1350,12 +1350,18 @@ function mount(target, options){
     var e2 = new THREE.Vector3().crossVectors(poleDir, e1).normalize();
     return {e1:e1, e2:e2};
   }
+  function poleDirFromPolar(polarDeg, azimuthDeg){
+    var polar = polarDeg*Math.PI/180, az = azimuthDeg*Math.PI/180;
+    return new THREE.Vector3(Math.sin(polar)*Math.cos(az), Math.sin(polar)*Math.sin(az), Math.cos(polar));
+  }
   function initSpiral(){
+    // Both poles kept well inside the front (camera-facing, +Z) hemisphere — same
+    // polar distance from the view axis, opposite azimuths, for a symmetric
+    // side-by-side yin-yang layout that's always fully visible, never wrapping to
+    // the back of the sphere.
     spiralPoles = [
-      {dir: new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), Math.PI*0.28)
-             .applyAxisAngle(new THREE.Vector3(1,0,0), Math.PI*0.12)},
-      {dir: new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), Math.PI*1.18)
-             .applyAxisAngle(new THREE.Vector3(1,0,0), -Math.PI*0.10)}
+      {dir: poleDirFromPolar(46, 105)},
+      {dir: poleDirFromPolar(46, 285)}
     ];
     spiralPoles.forEach(function(p){ p.basis = buildPoleBasis(p.dir); });
     spiralParticles = [];
@@ -1366,7 +1372,10 @@ function mount(target, options){
   }
   function makeSpiralParticle(randomStartAngle){
     var pole = spiralPoles[Math.random()<0.5?0:1];
-    var angleDeg = randomStartAngle ? (30+Math.random()*55) : (68+Math.random()*12); // 30-85 deg outer band
+    // poles sit 46deg from the view axis, so keep each particle's own angle from its
+    // pole modest — otherwise, at an unlucky azimuth, it can wander past the horizon
+    // and onto the back of the sphere where it's barely visible.
+    var angleDeg = randomStartAngle ? (10+Math.random()*24) : (30+Math.random()*6); // 10-34 deg outer band
     return {
       pole: pole,
       angle: angleDeg*Math.PI/180,
