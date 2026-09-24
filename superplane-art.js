@@ -861,13 +861,14 @@ function mount(target, options){
 
   /* ---------------- GLOBE mode visuals: the planet + its lat/long grid ---------------- */
   var globeSphereGeo = new THREE.SphereGeometry(1, 32, 24);
-  var globeSolidMat = new THREE.MeshBasicMaterial({color:0x161613});
+  var globeSolidMat = new THREE.MeshBasicMaterial({color: options.minimalSphere ? COLOR_BG : 0x161613});
   var globeGridMat = new THREE.MeshBasicMaterial({color:0x3c3c38, wireframe:true, transparent:true, opacity:0.5});
   var globeSolidMesh = new THREE.Mesh(globeSphereGeo, globeSolidMat);
   var globeGridMesh = new THREE.Mesh(globeSphereGeo, globeGridMat);
   globeGridMesh.scale.setScalar(1.003);
   globeSolidMesh.visible = false; globeGridMesh.visible = false;
   scene.add(globeSolidMesh, globeGridMesh);
+  var showGlobeGrid = !options.minimalSphere; // color-matched-to-background solid sphere still occludes the back hemisphere correctly; the grid overlay is just hidden
 
   /* ---------------- SPIRAL mode visual: a small centered sphere, same look ---------------- */
   var spiralSolidMesh = new THREE.Mesh(globeSphereGeo, globeSolidMat);
@@ -1356,14 +1357,14 @@ function mount(target, options){
 
   /* ---------------- SPIRAL MODE ----------------
      Pure surface flow — no pull toward any hidden "core", nothing happens off the
-     visible front. Arrows circulate under the combined pull of four poles (two close
-     pairs, one per region) — a single pole's field is a perfect circle, but summing
-     two nearby poles bends that into the lumpy, non-circular nested-loop shape from
-     the reference. This mirrors GLOBE's field/turbulence/containment math exactly
-     (including its velocity cap, which SPIRAL was originally missing — without it,
-     particles passing close to a pole can spike to a very high speed in one frame and
-     jump far along the field in lockstep with other nearby particles, which is what
-     reads as "everything lined up in a row"). */
+     visible front. Two poles (one per region, opposite spin) drive the circulation;
+     TURBULENCE (per-particle phase, same technique as GLOBE) is what bends that into
+     organic non-circular wandering rather than a perfect ring. This mirrors GLOBE's
+     field/containment math closely, including its velocity cap. An earlier version
+     used two close same-sign poles per region to try to bend the shape geometrically
+     — that created an over-attracting "channel" between the two regions that pulled
+     the whole population onto one thin curve within a few seconds; back to one clean
+     pole per region fixes that. */
   var spiralParticles = [], spiralPoles = [];
   var SPIRAL_FRONT = new THREE.Vector3(0,0,1); // the camera-facing axis for this mode's fixed front-on view
   var SPIRAL_MAX_SPEED = 2.2;
@@ -1375,11 +1376,14 @@ function mount(target, options){
     // Two regions (front-hemisphere-safe, ~40-50deg from the view axis), each made of
     // two close poles spinning the same way — that pairing is what bends the flow into
     // organic nested loops instead of one clean circle per region.
+    // Two poles (not four) — two same-sign poles placed close together turned out to
+    // create an over-attracting "channel" between the regions that pulls the whole
+    // population onto one thin curve within a few seconds. A single pole per region,
+    // same layout that's already proven stable in FIELD/GLOBE, plus TURBULENCE below
+    // for the organic non-circular bending.
     spiralPoles = [
-      {dir: poleDirFromPolar(40, 92),  sign: 1},
-      {dir: poleDirFromPolar(50, 112), sign: 1},
-      {dir: poleDirFromPolar(40, 272), sign:-1},
-      {dir: poleDirFromPolar(50, 292), sign:-1}
+      {dir: poleDirFromPolar(44, 100), sign: 1},
+      {dir: poleDirFromPolar(44, 280), sign:-1}
     ];
     spiralParticles = [];
     var c = cfg.spiral;
@@ -1397,7 +1401,21 @@ function mount(target, options){
   function resetSpiral(){ initSpiral(); }
   var spTmpTan=new THREE.Vector3(), spTmpField=new THREE.Vector3(), spTmpToFront=new THREE.Vector3();
   var spiralClock = 0;
-  function spiralFieldAt(dirOnSphere, particle, c){
+  var spTmpAxis = new THREE.Vector3();
+  function spiralTurbulenceAt(dir, time, scale, out){
+    if(scale<=0){ out.set(0,0,0); return out; }
+    // Large-scale, position-based (not per-particle-phase) — nearby particles get a
+    // similar push, so it reads as one smooth, coherent bend in the flow rather than
+    // independent jitter.
+    var n1 = Math.sin(dir.x*1.3+time*0.15) + Math.sin(dir.y*1.7-time*0.11) + Math.sin(dir.z*1.1+time*0.09);
+    var n2 = Math.cos(dir.y*1.5-time*0.13) + Math.cos(dir.z*1.9+time*0.10) + Math.cos(dir.x*1.2-time*0.08);
+    spTmpAxis.set(n1, n2, (n1-n2)*0.5);
+    if(spTmpAxis.lengthSq()<1e-8) spTmpAxis.set(1,0,0); else spTmpAxis.normalize();
+    out.crossVectors(spTmpAxis, dir);
+    if(out.lengthSq()>1e-8) out.normalize();
+    return out.multiplyScalar(scale*0.35);
+  }
+  function spiralFieldAt(dirOnSphere, particle, c, time){
     spTmpField.set(0,0,0);
     for(var i=0;i<spiralPoles.length;i++){
       var pole = spiralPoles[i];
@@ -1407,12 +1425,7 @@ function mount(target, options){
       spTmpTan.multiplyScalar(pole.sign*c.strength*0.6/angDist);
       spTmpField.add(spTmpTan);
     }
-    if(c.turbulence>0){
-      spTmpTan.crossVectors(particle.axisSeed, dirOnSphere);
-      if(spTmpTan.lengthSq()>1e-8) spTmpTan.normalize();
-      spTmpTan.multiplyScalar(Math.sin(spiralClock*0.3 + particle.seed)*c.turbulence*0.35);
-      spTmpField.add(spTmpTan);
-    }
+    spTmpField.add(spiralTurbulenceAt(dirOnSphere, time, c.turbulence, spTmpTan.clone()));
     return spTmpField;
   }
   function updateSpiral(dt, time){
@@ -1615,7 +1628,8 @@ function mount(target, options){
     } else if(state.mode==='globe'){
       poleGroup.visible = false;
       hideNetworkVisuals();
-      globeSolidMesh.visible = true; globeGridMesh.visible = true;
+      hideSpiralVisuals();
+      globeSolidMesh.visible = true; globeGridMesh.visible = showGlobeGrid;
       var gc = globeSphereCenter(new THREE.Vector3());
       if(flatMode) gc.z *= FLAT_Z_SQUASH;
       globeSolidMesh.position.copy(gc); globeGridMesh.position.copy(gc);
@@ -1744,6 +1758,8 @@ function mount(target, options){
         function(){
           if(state.mode==='field' && (p.key==='count'||p.key==='poles')) initField();
           if(state.mode==='school' && p.key==='count') initSchool();
+          if(state.mode==='globe' && (p.key==='count'||p.key==='poles')) initGlobe();
+          if(state.mode==='spiral' && p.key==='count') initSpiral();
         }
       ));
     });
