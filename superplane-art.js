@@ -106,7 +106,7 @@ var MODES = {
       {key:'count',       label:'ARROWS',       min:100,max:1200,step:20, def:600},
       {key:'strength',    label:'ROTATION',     min:0.2,max:3,   step:0.05,def:1.2},
       {key:'inwardPull',  label:'INWARD PULL',  min:0,  max:2,   step:0.05,def:0.55},
-      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:0.7},
+      {key:'turbulence',  label:'TURBULENCE',   min:0,  max:2,   step:0.05,def:0},
       {key:'speed',       label:'FLOW SPEED',   min:0.1,max:3,   step:0.05,def:0.7},
       {key:'sphereSize',  label:'SPHERE SIZE',  min:0.5,max:3,   step:0.05,def:1.1},
       {key:'respawnAngle',label:'CORE SIZE',    min:3,  max:20,  step:1,  def:6}
@@ -1435,7 +1435,7 @@ function mount(target, options){
       if(c.turbulence>0){
         spWobbleTan.crossVectors(p.wobbleAxis, cleanDir);
         if(spWobbleTan.lengthSq()>1e-8) spWobbleTan.normalize();
-        cleanDir.addScaledVector(spWobbleTan, Math.sin(time*0.6+p.wobbleSeed)*c.turbulence*0.15).normalize();
+        cleanDir.addScaledVector(spWobbleTan, Math.sin(time*0.12+p.wobbleSeed)*c.turbulence*0.08).normalize();
       }
       p.dirOnSphere.copy(cleanDir);
       if(p.angle < coreLimitRad){
