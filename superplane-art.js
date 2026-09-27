@@ -13,6 +13,7 @@
  *   options.mode            'field' | 'school' | 'growth' | 'network'   (default 'field')
  *   options.panel           show the utility control panel  (default false)
  *   options.allowModeSwitch show FIELD/SCHOOL/GROWTH tabs, only used if panel:true (default true)
+ *   options.hiddenModes    array of mode keys to omit from the panel's tab row, e.g. ['spiral'] (only used if panel:true)
  *   options.height          CSS height if the container has none set, e.g. '520px' (default '100%')
  *   options.overrides       {field:{...}, school:{...}, growth:{...}, global:{...}} param overrides
  *   options.bgColor         override the scene/canvas background color (hex string '#RRGGBB' or number 0xRRGGBB)
@@ -588,6 +589,9 @@ function mount(target, options){
       var tabsRow = document.createElement('div');
       tabsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3, 1fr);border:1px solid #1c1c1c;border-right:none;border-bottom:none;margin-bottom:14px;';
       var MODE_KEYS = ['field','school','growth','network','globe','startrek','spiral'];
+      if(options.hiddenModes && options.hiddenModes.length){
+        MODE_KEYS = MODE_KEYS.filter(function(m){ return options.hiddenModes.indexOf(m) === -1; });
+      }
       MODE_KEYS.forEach(function(m, i){
         var t = document.createElement('div');
         t.textContent = m.toUpperCase();
