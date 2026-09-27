@@ -854,7 +854,11 @@ function mount(target, options){
   // Depth cueing ("farther = grayer") comes from scene fog instead, which fades each
   // fragment toward a neutral gray as it recedes from the camera — applied by distance,
   // not by surface angle, so it never creates a shaded/lit look on the object itself.
-  scene.fog = new THREE.Fog(0x55534f, 3, 15);
+  // Fog color follows the same override as the background: with a custom bgColor,
+  // distant fragments (e.g. the far side of the GLOBE sphere) fade toward that same
+  // color instead of an unrelated gray, so nothing reads as a mismatched seam against
+  // a recolored background.
+  scene.fog = new THREE.Fog((typeof options.bgColor !== 'undefined') ? options.bgColor : 0x55534f, 3, 15);
 
   var poleGroup = new THREE.Group();
   scene.add(poleGroup);
