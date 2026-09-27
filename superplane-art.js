@@ -15,6 +15,9 @@
  *   options.allowModeSwitch show FIELD/SCHOOL/GROWTH tabs, only used if panel:true (default true)
  *   options.height          CSS height if the container has none set, e.g. '520px' (default '100%')
  *   options.overrides       {field:{...}, school:{...}, growth:{...}, global:{...}} param overrides
+ *   options.bgColor         override the scene/canvas background color (hex string '#RRGGBB' or number 0xRRGGBB)
+ *   options.arrowColor      override the arrow base color for this instance only (hex string or number)
+ *   options.arrowAccentColor override the arrow accent (near-cursor) color for this instance only; defaults to arrowColor if that is set, otherwise the shared accent color
  * Returns {destroy(){...}} handle.
  */
 (function(global){
@@ -502,6 +505,21 @@ function mount(target, options){
   }
   ensureSharedResources();
 
+  // options.bgColor / options.arrowColor / options.arrowAccentColor let a single
+  // mount() instance override the module-wide defaults (COLOR_BG / COLOR_BASE /
+  // COLOR_ACCENT) without affecting any other SuperplaneArt instance on the same
+  // page — the shared base/accent materials built by ensureSharedResources() stay
+  // untouched and are still reused whenever a mount doesn't ask for a custom color.
+  // Accepts either a hex string ('#EF8D0B') or a hex number (0xEF8D0B) — anything
+  // THREE.Color itself accepts.
+  var effectiveBgColor = (typeof options.bgColor !== 'undefined') ? options.bgColor : COLOR_BG;
+  var instanceBaseMat = (typeof options.arrowColor !== 'undefined')
+    ? new THREE.MeshBasicMaterial({color: options.arrowColor})
+    : sharedBaseMat;
+  var instanceAccentMat = (typeof options.arrowAccentColor !== 'undefined')
+    ? new THREE.MeshBasicMaterial({color: options.arrowAccentColor})
+    : (typeof options.arrowColor !== 'undefined' ? instanceBaseMat : sharedAccentMat);
+
   injectSliderThumbCSS();
   container.classList.add('sp-art-root');
   container.innerHTML = '';
@@ -783,7 +801,7 @@ function mount(target, options){
   ====================================================================== */
   var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true});
   renderer.setPixelRatio(Math.min(global.devicePixelRatio||1, 2));
-  renderer.setClearColor(COLOR_BG, 1);
+  renderer.setClearColor(effectiveBgColor, 1);
 
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
@@ -818,8 +836,8 @@ function mount(target, options){
   resize();
 
   var currentArrowStyle = null;
-  var baseMesh = new THREE.InstancedMesh(sharedArrowGeoByStyle[cfg.global.arrowStyle], sharedBaseMat, MAX_INSTANCES);
-  var accentMesh = new THREE.InstancedMesh(sharedArrowGeoByStyle[cfg.global.arrowStyle], sharedAccentMat, MAX_INSTANCES);
+  var baseMesh = new THREE.InstancedMesh(sharedArrowGeoByStyle[cfg.global.arrowStyle], instanceBaseMat, MAX_INSTANCES);
+  var accentMesh = new THREE.InstancedMesh(sharedArrowGeoByStyle[cfg.global.arrowStyle], instanceAccentMat, MAX_INSTANCES);
   currentArrowStyle = cfg.global.arrowStyle;
   function syncArrowStyleGeometry(){
     if(cfg.global.arrowStyle === currentArrowStyle) return;
@@ -842,8 +860,8 @@ function mount(target, options){
   scene.add(poleGroup);
 
   /* ---------------- NETWORK mode meshes: node rectangles + edge lines ---------------- */
-  var nodeMesh = new THREE.InstancedMesh(sharedNodeGeo, sharedBaseMat, MAX_NETWORK_NODES);
-  var nodeAccentMesh = new THREE.InstancedMesh(sharedNodeGeo, sharedAccentMat, MAX_NETWORK_NODES);
+  var nodeMesh = new THREE.InstancedMesh(sharedNodeGeo, instanceBaseMat, MAX_NETWORK_NODES);
+  var nodeAccentMesh = new THREE.InstancedMesh(sharedNodeGeo, instanceAccentMat, MAX_NETWORK_NODES);
   nodeMesh.count = 0; nodeAccentMesh.count = 0;
   scene.add(nodeMesh, nodeAccentMesh);
 
@@ -861,7 +879,7 @@ function mount(target, options){
 
   /* ---------------- GLOBE mode visuals: the planet + its lat/long grid ---------------- */
   var globeSphereGeo = new THREE.SphereGeometry(1, 32, 24);
-  var globeSolidMat = new THREE.MeshBasicMaterial({color: options.minimalSphere ? COLOR_BG : 0x161613});
+  var globeSolidMat = new THREE.MeshBasicMaterial({color: options.minimalSphere ? effectiveBgColor : 0x161613});
   var globeGridMat = new THREE.MeshBasicMaterial({color:0x3c3c38, wireframe:true, transparent:true, opacity:0.5});
   var globeSolidMesh = new THREE.Mesh(globeSphereGeo, globeSolidMat);
   var globeGridMesh = new THREE.Mesh(globeSphereGeo, globeGridMat);
