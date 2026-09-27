@@ -90,6 +90,7 @@ var MODES = {
       {key:'spin',        label:'PLANET SPIN',  min:0,  max:2,   step:0.05,def:0.3},
       {key:'sphereSize',  label:'SPHERE SIZE',  min:2,  max:10,  step:0.1, def:4.6},
       {key:'horizon',     label:'HORIZON',      min:0.3,max:1.0, step:0.02,def:0.64},
+      {key:'offsetX',     label:'OFFSET X',     min:-6, max:6,   step:0.1, def:0},
       {key:'capAngle',    label:'VISIBLE CAP',  min:20, max:90,  step:1,  def:50},
       {key:'cursorPull',  label:'CURSOR PULL',  min:0,  max:3,   step:0.05,def:1.2}
     ]
@@ -1296,7 +1297,7 @@ function mount(target, options){
   var GLOBE_SPIN_AXIS = new THREE.Vector3(0.15, 1, 0).normalize();
   function globeSphereCenter(out){
     var c = cfg.globe;
-    out.set(0, -c.sphereSize*c.horizon, 0);
+    out.set(c.offsetX||0, -c.sphereSize*c.horizon, 0);
     return out;
   }
   function randomCapDirection(halfAngleDeg){
