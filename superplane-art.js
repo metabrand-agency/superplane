@@ -1845,8 +1845,27 @@ function mount(target, options){
         return '<polygon points="'+s+'"/>';
       }
 
+      // GLOBE mode: on screen, the opaque sphere mesh depth-occludes arrows on
+      // its far side, so only the near hemisphere is ever visible. SVG has no
+      // depth buffer, so every particle would otherwise get drawn -- dumping
+      // the whole back side of the globe on top of the front. Cull to the
+      // camera-facing hemisphere here, with a small margin that also drops
+      // the near-grazing arrows right at the silhouette edge (exactly the
+      // ones most prone to extreme foreshortening artifacts below).
+      var globeCenter = null, globeToCam = null;
+      if(state.mode === 'globe'){
+        globeCenter = globeSphereCenter(new THREE.Vector3());
+        if(flatMode) globeCenter.z *= FLAT_Z_SQUASH;
+        globeToCam = camera.position.clone().sub(globeCenter).normalize();
+      }
+      var VISIBLE_MARGIN = 0.08;
+
       for(var i=0;i<frameArrows.length;i++){
         var a = frameArrows[i];
+        if(globeCenter){
+          var surfN = a.pos.clone().sub(globeCenter).normalize();
+          if(surfN.dot(globeToCam) < VISIBLE_MARGIN) continue;
+        }
         var widthScale = isFlat ? a.len : coneWidthScale;
         if(isFlat){ computeFlatOrientation(a.pos, a.dir, camera.position, tmpQuat); }
         else { tmpQuat.setFromUnitVectors(X_AXIS, a.dir); }
@@ -1855,14 +1874,15 @@ function mount(target, options){
 
         var polys = [];
         if(cfg.global.arrowStyle === 'cone'){
-          // Solid of revolution: from any non-axial angle its true silhouette
-          // is the ordered profile outline (CONE_SILHOUETTE_POINTS), same
-          // concave-shoulder shape as 'flat'. Billboard that fixed outline
-          // toward the camera (as 'flat' does) and emit it directly, in
-          // order -- no hull, which used to fill in the shoulder notch.
-          computeFlatOrientation(a.pos, a.dir, camera.position, tmpQuat);
-          tmpScale.set(a.len, widthScale, widthScale); // widthScale = coneWidthScale here, matches the live LINE THICKNESS control
-          tmpMat.compose(a.pos, tmpQuat, tmpScale);
+          // Solid of revolution, so its silhouette's SHAPE (the concave
+          // shoulder profile, CONE_SILHOUETTE_POINTS) is the same from any
+          // angle -- but its APPARENT LENGTH must foreshorten correctly as
+          // the view becomes more end-on, which only happens with the arrow's
+          // true 3D orientation projected through the camera's real
+          // perspective (tmpMat, already composed above, exactly matching
+          // the live mesh). Billboarding it toward the camera (as tried
+          // before) throws that foreshortening away, which is exactly what
+          // produced oversized, flipped-looking arrows at the sphere's limb.
           var pts2d=[];
           for(var k=0;k<CONE_SILHOUETTE_POINTS.length;k++) pts2d.push(projectPoint(CONE_SILHOUETTE_POINTS[k], tmpMat));
           polys.push(polyTag(pts2d));
