@@ -1814,6 +1814,17 @@ function mount(target, options){
       var isFlat = !!FLAT_STYLE_KEYS[cfg.global.arrowStyle];
       var coneWidthScale = cfg.global.arrowScale*cfg.global.lineThickness;
       var localPoints = ARROW_LOCAL_POINTS_BY_STYLE[cfg.global.arrowStyle];
+
+      function projectPoint(p, mat){
+        var wp = p.clone().applyMatrix4(mat);
+        var proj = wp.clone().project(camera);
+        return [(proj.x*0.5+0.5)*w, (1-(proj.y*0.5+0.5))*h];
+      }
+      function polyTag(pts2d){
+        var s = pts2d.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ');
+        return '<polygon points="'+s+'"/>';
+      }
+
       for(var i=0;i<frameArrows.length;i++){
         var a = frameArrows[i];
         var widthScale = isFlat ? a.len : coneWidthScale;
@@ -1821,17 +1832,34 @@ function mount(target, options){
         else { tmpQuat.setFromUnitVectors(X_AXIS, a.dir); }
         tmpScale.set(a.len, widthScale, widthScale);
         tmpMat.compose(a.pos, tmpQuat, tmpScale);
-        var pts2d=[];
-        for(var k=0;k<localPoints.length;k++){
-          var wp = localPoints[k].clone().applyMatrix4(tmpMat);
-          var proj = wp.clone().project(camera);
-          var x=(proj.x*0.5+0.5)*w, y=(1-(proj.y*0.5+0.5))*h;
-          pts2d.push([x,y]);
+
+        var polys = [];
+        if(cfg.global.arrowStyle === 'cone'){
+          // a real 3D solid -- its projected silhouette genuinely is convex,
+          // so the hull is correct here.
+          var pts2d=[];
+          for(var k=0;k<localPoints.length;k++) pts2d.push(projectPoint(localPoints[k], tmpMat));
+          polys.push(polyTag(convexHull2D(pts2d)));
+        } else if(cfg.global.arrowStyle === 'flat'){
+          // localPoints is the 7-point ordered CONCAVE outline (see
+          // buildFlatArrowGeometry) -- project it and emit it directly, in
+          // order. Taking its convex hull (as before) fills in the notch
+          // between the shaft and the head and turns the arrow into a solid
+          // blob/hexagon instead of an arrow.
+          var pts2d=[];
+          for(var k=0;k<localPoints.length;k++) pts2d.push(projectPoint(localPoints[k], tmpMat));
+          polys.push(polyTag(pts2d));
+        } else {
+          // chevron: three separate ordered quads (shaft + two barbs)
+          // concatenated -- keep them as three separate polygons rather
+          // than hulling them together into one shape.
+          for(var q=0;q<localPoints.length;q+=4){
+            var quadPts=[];
+            for(var k=q;k<q+4;k++) quadPts.push(projectPoint(localPoints[k], tmpMat));
+            polys.push(polyTag(quadPts));
+          }
         }
-        var hull = convexHull2D(pts2d);
-        var pts = hull.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); });
-        var poly = '<polygon points="'+pts.join(' ')+'"/>';
-        if(a.accent) accentParts.push(poly); else baseParts.push(poly);
+        if(a.accent) accentParts.push.apply(accentParts, polys); else baseParts.push.apply(baseParts, polys);
       }
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+
         '<rect width="100%" height="100%" fill="#0b0b0c"/>'+
