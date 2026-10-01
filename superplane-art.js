@@ -795,9 +795,9 @@ function mount(target, options){
     var exportRow = document.createElement('div');
     exportRow.style.cssText = 'display:flex;gap:8px;margin-bottom:14px;';
     var btnPng = document.createElement('button');
-    btnPng.textContent = 'EXPORT PNG';
+    btnPng.textContent = 'EXPORT PNG (P)';
     var btnSvg = document.createElement('button');
-    btnSvg.textContent = 'EXPORT SVG';
+    btnSvg.textContent = 'EXPORT SVG (S)';
     [btnPng, btnSvg].forEach(function(b){
       b.style.cssText = 'flex:1;padding:8px 4px;border:1px solid #1c1c1c;background:#ececea;color:#141414;font-family:inherit;font-size:10px;letter-spacing:0.4px;cursor:pointer;';
     });
@@ -1932,6 +1932,17 @@ function mount(target, options){
         '</svg>';
       downloadBlob(svg, 'image/svg+xml', 'superplane-'+state.mode+'.svg');
     });
+
+    // Keyboard shortcuts: P for PNG, S for SVG -- ignored while typing in a
+    // panel input/select so they don't fire while e.g. editing a number field.
+    document.addEventListener('keydown', function(e){
+      if(e.metaKey || e.ctrlKey || e.altKey) return;
+      var tag = (e.target && e.target.tagName) || '';
+      if(tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if(e.key === 'p' || e.key === 'P'){ btnPng.click(); }
+      else if(e.key === 's' || e.key === 'S'){ btnSvg.click(); }
+    });
+
     btnEmbed.addEventListener('click', function(){
       var overridesObj = {global:{}};
       overridesObj.global = {};
