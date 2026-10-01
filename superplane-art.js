@@ -183,6 +183,7 @@ var MODE_SCENE_DEFAULTS = {
 };
 
 var ARROW_LOCAL_POINTS_BY_STYLE = {}; // style key -> deduplicated local vertices, used for SVG silhouette export
+var CONE_SILHOUETTE_POINTS = null; // ordered concave outline for the cone style's true silhouette (see buildConeArrowGeometry)
 var sharedArrowGeoByStyle = {};       // style key -> BufferGeometry
 var sharedBaseMat = null, sharedAccentMat = null, sharedPoleGeo = null, sharedPoleMat = null;
 var sharedNodeGeo = null, sharedLineMatBase = null, sharedLineMatAccent = null;
@@ -232,6 +233,25 @@ function buildConeArrowGeometry(){
 
   var merged = mergeGeometries([shaftGeo, headGeo]);
   ARROW_LOCAL_POINTS_BY_STYLE.cone = dedupPoints(merged.attributes.position.array);
+
+  // A cylinder+cone is a solid of revolution, so -- viewed from any angle that
+  // isn't dead-on down its own axis -- its silhouette is always this exact
+  // profile curve mirrored top/bottom, regardless of roll around the axis.
+  // Head wider than shaft means the shoulder is a reflex (concave) corner,
+  // same as the 'flat' style: a convex hull of the mesh's vertices fills that
+  // notch in and turns the silhouette into a blob. Store this ordered outline
+  // for SVG export to use directly (billboarded, no hull), exactly like 'flat'.
+  var headStart = 0.5 - HEAD_LEN;
+  CONE_SILHOUETTE_POINTS = [
+    new THREE.Vector3(-0.5,      SHAFT_RADIUS, 0), // tail-top
+    new THREE.Vector3(headStart, SHAFT_RADIUS, 0), // shoulder-top-inner
+    new THREE.Vector3(headStart, HEAD_RADIUS,  0), // shoulder-top-outer
+    new THREE.Vector3( 0.5,      0,            0), // tip
+    new THREE.Vector3(headStart,-HEAD_RADIUS,  0), // shoulder-bottom-outer
+    new THREE.Vector3(headStart,-SHAFT_RADIUS, 0), // shoulder-bottom-inner
+    new THREE.Vector3(-0.5,     -SHAFT_RADIUS, 0)  // tail-bottom
+  ];
+
   return merged;
 }
 
@@ -1835,11 +1855,17 @@ function mount(target, options){
 
         var polys = [];
         if(cfg.global.arrowStyle === 'cone'){
-          // a real 3D solid -- its projected silhouette genuinely is convex,
-          // so the hull is correct here.
+          // Solid of revolution: from any non-axial angle its true silhouette
+          // is the ordered profile outline (CONE_SILHOUETTE_POINTS), same
+          // concave-shoulder shape as 'flat'. Billboard that fixed outline
+          // toward the camera (as 'flat' does) and emit it directly, in
+          // order -- no hull, which used to fill in the shoulder notch.
+          computeFlatOrientation(a.pos, a.dir, camera.position, tmpQuat);
+          tmpScale.set(a.len, widthScale, widthScale); // widthScale = coneWidthScale here, matches the live LINE THICKNESS control
+          tmpMat.compose(a.pos, tmpQuat, tmpScale);
           var pts2d=[];
-          for(var k=0;k<localPoints.length;k++) pts2d.push(projectPoint(localPoints[k], tmpMat));
-          polys.push(polyTag(convexHull2D(pts2d)));
+          for(var k=0;k<CONE_SILHOUETTE_POINTS.length;k++) pts2d.push(projectPoint(CONE_SILHOUETTE_POINTS[k], tmpMat));
+          polys.push(polyTag(pts2d));
         } else if(cfg.global.arrowStyle === 'flat'){
           // localPoints is the 7-point ordered CONCAVE outline (see
           // buildFlatArrowGeometry) -- project it and emit it directly, in
