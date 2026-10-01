@@ -1825,8 +1825,26 @@ function mount(target, options){
   }
   if(showPanel){
     btnPng.addEventListener('click', function(){
+      // Export at a higher internal resolution than the live on-screen canvas,
+      // independent of window size / devicePixelRatio cap: temporarily grow the
+      // renderer's pixel buffer (setSize(..., false) leaves the CSS/display size
+      // untouched, so nothing visibly jumps), render once, capture, then restore.
+      var curSize = new THREE.Vector2();
+      renderer.getSize(curSize);
+      var curPixelRatio = renderer.getPixelRatio();
+      var EXPORT_MAX_DIM = 3840; // long edge of the exported PNG, in pixels
+      var liveLongEdge = Math.max(curSize.x, curSize.y) * curPixelRatio;
+      var exportScale = Math.max(1, EXPORT_MAX_DIM / liveLongEdge);
+
+      renderer.setPixelRatio(curPixelRatio * exportScale);
+      renderer.setSize(curSize.x, curSize.y, false);
       renderer.render(scene, camera);
-      canvas.toBlob(function(blob){ downloadBlob(blob, 'image/png', 'superplane-'+state.mode+'.png'); }, 'image/png');
+      canvas.toBlob(function(blob){
+        downloadBlob(blob, 'image/png', 'superplane-'+state.mode+'.png');
+        renderer.setPixelRatio(curPixelRatio);
+        renderer.setSize(curSize.x, curSize.y, false);
+        renderer.render(scene, camera);
+      }, 'image/png');
     });
     btnSvg.addEventListener('click', function(){
       var w = renderer.domElement.width, h = renderer.domElement.height;
