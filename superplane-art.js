@@ -784,6 +784,72 @@ function mount(target, options){
     modeParamsEl = document.createElement('div');
     panelEl.appendChild(modeParamsEl);
 
+    var divider1b = document.createElement('div');
+    divider1b.style.cssText = 'border-top:1px solid #1c1c1c;margin:14px 0;';
+    panelEl.appendChild(divider1b);
+
+    var colorsLabel = document.createElement('div');
+    colorsLabel.textContent = 'COLORS';
+    colorsLabel.style.cssText = 'font-weight:700;letter-spacing:0.5px;margin-bottom:8px;';
+    panelEl.appendChild(colorsLabel);
+
+    function toHexString(c){
+      return '#' + new THREE.Color(c).getHexString();
+    }
+    var colorsRow = document.createElement('div');
+    colorsRow.style.cssText = 'display:flex;gap:8px;margin-bottom:14px;align-items:center;';
+    var arrowColorLabel = document.createElement('label');
+    arrowColorLabel.textContent = 'ARROW';
+    arrowColorLabel.style.cssText = 'font-size:9px;letter-spacing:0.4px;color:#9a9a94;display:block;margin-bottom:3px;';
+    var arrowColorInput = document.createElement('input');
+    arrowColorInput.type = 'text';
+    arrowColorInput.maxLength = 7;
+    arrowColorInput.value = toHexString(instanceBaseMat.color);
+    arrowColorInput.style.cssText = 'width:100%;padding:6px 4px;border:1px solid #1c1c1c;background:#141414;color:#ececea;font-family:inherit;font-size:10px;box-sizing:border-box;';
+    var arrowColorWrap = document.createElement('div');
+    arrowColorWrap.style.cssText = 'flex:1;';
+    arrowColorWrap.appendChild(arrowColorLabel); arrowColorWrap.appendChild(arrowColorInput);
+
+    var bgColorLabel = document.createElement('label');
+    bgColorLabel.textContent = 'BACKGROUND';
+    bgColorLabel.style.cssText = 'font-size:9px;letter-spacing:0.4px;color:#9a9a94;display:block;margin-bottom:3px;';
+    var bgColorInput = document.createElement('input');
+    bgColorInput.type = 'text';
+    bgColorInput.maxLength = 7;
+    bgColorInput.value = toHexString(effectiveBgColor);
+    bgColorInput.style.cssText = 'width:100%;padding:6px 4px;border:1px solid #1c1c1c;background:#141414;color:#ececea;font-family:inherit;font-size:10px;box-sizing:border-box;';
+    var bgColorWrap = document.createElement('div');
+    bgColorWrap.style.cssText = 'flex:1;';
+    bgColorWrap.appendChild(bgColorLabel); bgColorWrap.appendChild(bgColorInput);
+
+    var btnColorRefresh = document.createElement('button');
+    btnColorRefresh.textContent = '\u21BB'; // refresh glyph
+    btnColorRefresh.title = 'Apply colors';
+    btnColorRefresh.style.cssText = 'align-self:flex-end;padding:6px 10px;border:1px solid #1c1c1c;background:#ececea;color:#141414;font-family:inherit;font-size:13px;cursor:pointer;';
+
+    function applyColors(){
+      var hexRe = /^#?[0-9a-fA-F]{6}$/;
+      if(hexRe.test(arrowColorInput.value)){
+        var ac = arrowColorInput.value.replace('#','');
+        instanceBaseMat.color.set('#'+ac);
+        if(instanceAccentMat === instanceBaseMat) instanceAccentMat.color.set('#'+ac);
+      }
+      if(hexRe.test(bgColorInput.value)){
+        var bc = '#'+bgColorInput.value.replace('#','');
+        effectiveBgColor = bc;
+        renderer.setClearColor(bc, 1);
+        if(scene.fog) scene.fog.color.set(bc);
+        if(options.minimalSphere) globeSolidMat.color.set(bc);
+      }
+    }
+    btnColorRefresh.addEventListener('click', applyColors);
+    [arrowColorInput, bgColorInput].forEach(function(inp){
+      inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') applyColors(); });
+    });
+
+    colorsRow.appendChild(arrowColorWrap); colorsRow.appendChild(bgColorWrap); colorsRow.appendChild(btnColorRefresh);
+    panelEl.appendChild(colorsRow);
+
     var divider2 = document.createElement('div');
     divider2.style.cssText = 'border-top:1px solid #1c1c1c;margin:14px 0;';
     panelEl.appendChild(divider2);
