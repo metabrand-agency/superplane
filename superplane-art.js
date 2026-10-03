@@ -2083,6 +2083,7 @@ function mount(target, options){
   // time instead of disappearing the way a full mount()-over-mount() swap
   // (or a crossfade between two separate live instances) would cause.
   var colorTweenRaf = null;
+  // cache-bust marker v2
   function setColors(targetBg, targetArrow, durationMs, onDone){
     if(colorTweenRaf) cancelAnimationFrame(colorTweenRaf);
     var fromBg = renderer.getClearColor(new THREE.Color());
