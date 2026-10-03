@@ -2077,9 +2077,51 @@ function mount(target, options){
   }
   animate();
 
+  // Live colour tween: smoothly interpolates background/fog/sphere and arrow
+  // colour on this ALREADY-RUNNING instance -- the particle system itself is
+  // untouched (never re-initialised), so arrows keep animating the whole
+  // time instead of disappearing the way a full mount()-over-mount() swap
+  // (or a crossfade between two separate live instances) would cause.
+  var colorTweenRaf = null;
+  function setColors(targetBg, targetArrow, durationMs, onDone){
+    if(colorTweenRaf) cancelAnimationFrame(colorTweenRaf);
+    var fromBg = renderer.getClearColor(new THREE.Color());
+    var toBg = new THREE.Color(targetBg);
+    var fromArrow = instanceBaseMat.color.clone();
+    var toArrow = new THREE.Color(targetArrow);
+    var sameMat = (instanceAccentMat === instanceBaseMat);
+    var fromAccent = sameMat ? null : instanceAccentMat.color.clone();
+    var start = null;
+    var tmp = new THREE.Color();
+    function step(ts){
+      if(destroyed) return;
+      if(start === null) start = ts;
+      var t = Math.min(1, (ts - start) / durationMs);
+      // ease-in-out, matches the cubic-bezier(0.4,0,0.2,1) feel used elsewhere on the site
+      var e = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+      tmp.lerpColors(fromBg, toBg, e);
+      renderer.setClearColor(tmp, 1);
+      if(scene.fog) scene.fog.color.lerpColors(fromBg, toBg, e);
+      if(options.minimalSphere) globeSolidMat.color.lerpColors(fromBg, toBg, e);
+      instanceBaseMat.color.lerpColors(fromArrow, toArrow, e);
+      if(sameMat){ /* same material object, already updated above */ }
+      else if(fromAccent){ instanceAccentMat.color.lerpColors(fromAccent, toArrow, e); }
+      if(t < 1){
+        colorTweenRaf = requestAnimationFrame(step);
+      } else {
+        colorTweenRaf = null;
+        effectiveBgColor = targetBg;
+        if(onDone) onDone();
+      }
+    }
+    colorTweenRaf = requestAnimationFrame(step);
+  }
+
   return {
+    setColors: setColors,
     destroy: function(){
       destroyed = true;
+      if(colorTweenRaf) cancelAnimationFrame(colorTweenRaf);
       if(rafId) cancelAnimationFrame(rafId);
       resizeObs.disconnect();
       renderer.dispose();
