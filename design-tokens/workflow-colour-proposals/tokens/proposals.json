@@ -1,0 +1,73 @@
+/opt/homebrew/Library/Homebrew/cmd/shellenv.sh: line 18: /bin/ps: Operation not permitted
+{
+  "name": "Superplane workflow colour token proposals",
+  "version": "0.1.0",
+  "status": "proposal",
+  "source": {
+    "figma": "https://www.figma.com/design/woctuEhFjW0tm6rvpId9Lf/Superplane?node-id=844-29142",
+    "storybook": "https://design.superplane.com/?path=/story/factories-design-system-tokens--light"
+  },
+  "semanticMapping": {
+    "backlog": "draft",
+    "implement": "running",
+    "verify": "waiting",
+    "done": "completed"
+  },
+  "options": {
+    "option-1": {
+      "sourceLabel": "Corporate Flow",
+      "mix": {
+        "light": { "body": 8, "header": 12, "border": 55 },
+        "dark": { "body": 14, "header": 20, "border": 65 }
+      },
+      "accent": {
+        "light": { "backlog": "#98A2AD", "implement": "#14767A", "verify": "#C99A16", "done": "#3C946E" },
+        "dark": { "backlog": "#7F8986", "implement": "#4F9B98", "verify": "#C6B34B", "done": "#78A994" }
+      }
+    },
+    "option-2": {
+      "sourceLabel": "Quiet Brand",
+      "mix": {
+        "light": { "body": 5, "header": 8, "border": 45 },
+        "dark": { "body": 11, "header": 16, "border": 55 }
+      },
+      "accent": {
+        "light": { "backlog": "#969EA8", "implement": "#567C96", "verify": "#B88959", "done": "#668F7A" },
+        "dark": { "backlog": "#89857A", "implement": "#5D8F8B", "verify": "#B4A067", "done": "#7FA493" }
+      }
+    },
+    "option-3": {
+      "sourceLabel": "Technical Signals",
+      "mix": {
+        "light": { "body": 7, "header": 11, "border": 58 },
+        "dark": { "body": 13, "header": 19, "border": 68 }
+      },
+      "accent": {
+        "light": { "backlog": "#98A2B0", "implement": "#5E8FD3", "verify": "#D0A640", "done": "#5AA37A" },
+        "dark": { "backlog": "#AEB8C5", "implement": "#78A7E3", "verify": "#DEBA5B", "done": "#76BA91" }
+      }
+    },
+    "option-4": {
+      "sourceLabel": "Technical Signals",
+      "mix": {
+        "light": { "body": 10, "header": 16, "border": 48 },
+        "dark": { "body": 15, "header": 22, "border": 60 }
+      },
+      "accent": {
+        "light": { "backlog": "#A7B0BC", "implement": "#88BBDD", "verify": "#E8B27F", "done": "#8AC9B0" },
+        "dark": { "backlog": "#B3BDC8", "implement": "#78ADCF", "verify": "#D69C6E", "done": "#79B9A1" }
+      }
+    },
+    "option-5": {
+      "sourceLabel": "Technical Signals",
+      "mix": {
+        "light": { "body": 7, "header": 12, "border": 54 },
+        "dark": { "body": 13, "header": 20, "border": 64 }
+      },
+      "accent": {
+        "light": { "backlog": "#8F99A6", "implement": "#3F87D1", "verify": "#7A5AC5", "done": "#1798A8" },
+        "dark": { "backlog": "#A9B4C1", "implement": "#6AAAE6", "verify": "#9A7DDD", "done": "#49BAC7" }
+      }
+    }
+  }
+}
