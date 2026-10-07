@@ -1,0 +1,143 @@
+/opt/homebrew/Library/Homebrew/cmd/shellenv.sh: line 18: /bin/ps: Operation not permitted
+/*
+ * Superplane workflow colour token proposals.
+ *
+ * Select a palette with data-superplane-palette="option-N" on the theme root.
+ * Add the `dark` class or data-theme="dark" to the same element for Dark mode.
+ */
+
+:where([data-superplane-palette]) {
+  --workflow-fg-mix: 60%;
+  --workflow-fg-contrast: #000;
+
+  --status-draft-bg: color-mix(in srgb, var(--workflow-backlog-accent) var(--workflow-body-mix), var(--background));
+  --status-draft-border: color-mix(in srgb, var(--workflow-backlog-accent) var(--workflow-border-mix), var(--background));
+  --status-draft-dot: var(--workflow-backlog-accent);
+  --status-draft-fg: color-mix(in srgb, var(--workflow-backlog-accent) var(--workflow-fg-mix), var(--workflow-fg-contrast));
+  --status-draft-header-bg: color-mix(in srgb, var(--workflow-backlog-accent) var(--workflow-header-mix), var(--background));
+
+  --status-running-bg: color-mix(in srgb, var(--workflow-implement-accent) var(--workflow-body-mix), var(--background));
+  --status-running-border: color-mix(in srgb, var(--workflow-implement-accent) var(--workflow-border-mix), var(--background));
+  --status-running-dot: var(--workflow-implement-accent);
+  --status-running-fg: color-mix(in srgb, var(--workflow-implement-accent) var(--workflow-fg-mix), var(--workflow-fg-contrast));
+  --status-running-header-bg: color-mix(in srgb, var(--workflow-implement-accent) var(--workflow-header-mix), var(--background));
+  --status-running-lane-bg: var(--status-running-bg);
+
+  --status-waiting-bg: color-mix(in srgb, var(--workflow-verify-accent) var(--workflow-body-mix), var(--background));
+  --status-waiting-border: color-mix(in srgb, var(--workflow-verify-accent) var(--workflow-border-mix), var(--background));
+  --status-waiting-dot: var(--workflow-verify-accent);
+  --status-waiting-fg: color-mix(in srgb, var(--workflow-verify-accent) var(--workflow-fg-mix), var(--workflow-fg-contrast));
+  --status-waiting-header-bg: color-mix(in srgb, var(--workflow-verify-accent) var(--workflow-header-mix), var(--background));
+
+  --status-completed-bg: color-mix(in srgb, var(--workflow-done-accent) var(--workflow-body-mix), var(--background));
+  --status-completed-border: color-mix(in srgb, var(--workflow-done-accent) var(--workflow-border-mix), var(--background));
+  --status-completed-dot: var(--workflow-done-accent);
+  --status-completed-fg: color-mix(in srgb, var(--workflow-done-accent) var(--workflow-fg-mix), var(--workflow-fg-contrast));
+  --status-completed-header-bg: color-mix(in srgb, var(--workflow-done-accent) var(--workflow-header-mix), var(--background));
+  --status-done-lane-bg: var(--status-completed-bg);
+}
+
+:where(.dark[data-superplane-palette], [data-theme="dark"][data-superplane-palette]) {
+  --workflow-fg-mix: 98%;
+  --workflow-fg-contrast: #fff;
+}
+
+:where([data-superplane-palette="option-1"]) {
+  --workflow-body-mix: 8%;
+  --workflow-header-mix: 12%;
+  --workflow-border-mix: 55%;
+  --workflow-backlog-accent: #98a2ad;
+  --workflow-implement-accent: #14767a;
+  --workflow-verify-accent: #c99a16;
+  --workflow-done-accent: #3c946e;
+}
+
+:where([data-superplane-palette="option-2"]) {
+  --workflow-body-mix: 5%;
+  --workflow-header-mix: 8%;
+  --workflow-border-mix: 45%;
+  --workflow-backlog-accent: #969ea8;
+  --workflow-implement-accent: #567c96;
+  --workflow-verify-accent: #b88959;
+  --workflow-done-accent: #668f7a;
+}
+
+:where([data-superplane-palette="option-3"]) {
+  --workflow-body-mix: 7%;
+  --workflow-header-mix: 11%;
+  --workflow-border-mix: 58%;
+  --workflow-backlog-accent: #98a2b0;
+  --workflow-implement-accent: #5e8fd3;
+  --workflow-verify-accent: #d0a640;
+  --workflow-done-accent: #5aa37a;
+}
+
+:where([data-superplane-palette="option-4"]) {
+  --workflow-body-mix: 10%;
+  --workflow-header-mix: 16%;
+  --workflow-border-mix: 48%;
+  --workflow-backlog-accent: #a7b0bc;
+  --workflow-implement-accent: #88bbdd;
+  --workflow-verify-accent: #e8b27f;
+  --workflow-done-accent: #8ac9b0;
+}
+
+:where([data-superplane-palette="option-5"]) {
+  --workflow-body-mix: 7%;
+  --workflow-header-mix: 12%;
+  --workflow-border-mix: 54%;
+  --workflow-backlog-accent: #8f99a6;
+  --workflow-implement-accent: #3f87d1;
+  --workflow-verify-accent: #7a5ac5;
+  --workflow-done-accent: #1798a8;
+}
+
+:where(.dark[data-superplane-palette="option-1"], [data-theme="dark"][data-superplane-palette="option-1"]) {
+  --workflow-body-mix: 14%;
+  --workflow-header-mix: 20%;
+  --workflow-border-mix: 65%;
+  --workflow-backlog-accent: #7f8986;
+  --workflow-implement-accent: #4f9b98;
+  --workflow-verify-accent: #c6b34b;
+  --workflow-done-accent: #78a994;
+}
+
+:where(.dark[data-superplane-palette="option-2"], [data-theme="dark"][data-superplane-palette="option-2"]) {
+  --workflow-body-mix: 11%;
+  --workflow-header-mix: 16%;
+  --workflow-border-mix: 55%;
+  --workflow-backlog-accent: #89857a;
+  --workflow-implement-accent: #5d8f8b;
+  --workflow-verify-accent: #b4a067;
+  --workflow-done-accent: #7fa493;
+}
+
+:where(.dark[data-superplane-palette="option-3"], [data-theme="dark"][data-superplane-palette="option-3"]) {
+  --workflow-body-mix: 13%;
+  --workflow-header-mix: 19%;
+  --workflow-border-mix: 68%;
+  --workflow-backlog-accent: #aeb8c5;
+  --workflow-implement-accent: #78a7e3;
+  --workflow-verify-accent: #deba5b;
+  --workflow-done-accent: #76ba91;
+}
+
+:where(.dark[data-superplane-palette="option-4"], [data-theme="dark"][data-superplane-palette="option-4"]) {
+  --workflow-body-mix: 15%;
+  --workflow-header-mix: 22%;
+  --workflow-border-mix: 60%;
+  --workflow-backlog-accent: #b3bdc8;
+  --workflow-implement-accent: #78adcf;
+  --workflow-verify-accent: #d69c6e;
+  --workflow-done-accent: #79b9a1;
+}
+
+:where(.dark[data-superplane-palette="option-5"], [data-theme="dark"][data-superplane-palette="option-5"]) {
+  --workflow-body-mix: 13%;
+  --workflow-header-mix: 20%;
+  --workflow-border-mix: 64%;
+  --workflow-backlog-accent: #a9b4c1;
+  --workflow-implement-accent: #6aaae6;
+  --workflow-verify-accent: #9a7ddd;
+  --workflow-done-accent: #49bac7;
+}
